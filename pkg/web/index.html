@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZUHAN</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c62828'/%3E%3Ccircle cx='14' cy='14' r='7' fill='none' stroke='white' stroke-width='3'/%3E%3Cpath d='M19 19l6 6' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f4f5f8;--card:#fff;--card2:#f9fafc;--fg:#1b2130;--mut:#687085;--line:#e2e5ec;--line2:#eef0f4;
+  --acc:#2f5bd3;--acc-fg:#fff;--focus:#2f5bd355;
+  --mal:#c62828;--mal-bg:#fdecec;--sus:#a85d00;--sus-bg:#fff4e0;--cln:#2e7d32;--cln-bg:#e9f6ea;
+  --inf:#0270b0;--inf-bg:#e6f3fb;--nf:#77808f;--nf-bg:#f0f1f4;--err:#8e24aa;--err-bg:#f6e9f9;
+  --shadow:0 1px 2px #0000000d,0 2px 8px #00000008;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1218;--card:#171b23;--card2:#1c212b;--fg:#e5e8ef;--mut:#98a1b3;--line:#2a303c;--line2:#222833;
+  --acc:#5b84f0;--acc-fg:#fff;--focus:#5b84f066;
+  --mal:#ff6b6b;--mal-bg:#3a1c1f;--sus:#ffb74d;--sus-bg:#3a2c16;--cln:#6bcB77;--cln-bg:#1b3020;
+  --inf:#4fc3f7;--inf-bg:#15303d;--nf:#8b93a3;--nf-bg:#232833;--err:#d59be0;--err-bg:#33213a;
+  --shadow:0 1px 2px #0000004d;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--acc)}
+.mono{font-family:var(--mono)}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.top .in{max-width:1200px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:24px;height:56px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;letter-spacing:-.01em;white-space:nowrap}
+.brand svg{flex:none}
+.brand .ver{font-weight:500;font-size:12px;color:var(--mut)}
+.tabs{display:flex;gap:2px;height:100%;overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:0 14px;height:100%;cursor:pointer;color:var(--mut);font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.tabs button:hover{color:var(--fg)}
+.tabs button.active{color:var(--fg);border-bottom-color:var(--acc)}
+.pill{background:var(--line2);color:var(--mut);border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;line-height:18px}
+.tabs button.active .pill{background:var(--acc);color:var(--acc-fg)}
+.local-note{margin-left:auto;font-size:12px;color:var(--mut);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--cln)}
+
+main{max-width:1200px;margin:0 auto;padding:22px 20px 80px}
+h2{font-size:15px;margin:0 0 12px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:var(--shadow);margin-bottom:18px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}.local-note{display:none}}
+
+/* controls */
+textarea,input[type=text],input[type=password],input[type=search],input[type=number],select{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;outline:none}
+textarea:focus,input:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--focus)}
+textarea{width:100%;min-height:150px;resize:vertical;font-family:var(--mono);font-size:13px;line-height:1.55}
+input[type=number]{width:72px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 14px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--mut)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-fg);padding:8px 22px}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--mal)}
+.btn.danger:hover{border-color:var(--mal)}
+.btn.tiny{padding:2px 9px;font-size:12px;font-weight:600}
+.btn.ghost{background:transparent}
+.chk{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+.chk input{width:15px;height:15px;accent-color:var(--acc)}
+.num{display:inline-flex;align-items:center;gap:7px;color:var(--mut)}
+.lbl{font-size:12px;color:var(--mut);font-weight:600;display:block;margin:10px 0 4px}
+.field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px}
+.field>span{font-size:12px;color:var(--mut);font-weight:600}
+.hint{font-size:12px;color:var(--mut);margin:6px 0 0}
+.warnbox{font-size:12px;background:var(--sus-bg);color:var(--sus);border-radius:8px;padding:8px 10px;margin-top:10px}
+
+.seg{display:inline-flex;background:var(--line2);border-radius:9px;padding:3px;gap:2px;margin-bottom:12px}
+.seg button{border:0;background:transparent;border-radius:7px;padding:6px 14px;cursor:pointer;font-weight:600;color:var(--mut)}
+.seg button.active{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+.seg.small{margin:0}
+.seg.small button{padding:4px 11px;font-size:12px}
+
+.opts{margin-top:14px;padding-top:14px;border-top:1px solid var(--line2);display:flex;flex-direction:column;gap:12px}
+.srcchips{display:flex;flex-wrap:wrap;gap:6px}
+.srcchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 11px 3px 8px;cursor:pointer;font-size:12px;font-weight:600;user-select:none;background:var(--card2)}
+.srcchip input{accent-color:var(--acc);margin:0}
+.srcchip.off{opacity:.5;cursor:not-allowed}
+.srcchip .k{font-weight:500;color:var(--mut)}
+.actions{margin-top:16px}
+.progress{display:flex;align-items:center;gap:10px;flex:1;min-width:200px;color:var(--mut);font-size:12px}
+.bar{flex:1;max-width:320px;height:6px;background:var(--line2);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--acc);border-radius:99px;transition:width .25s}
+
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--line);border-radius:12px;padding:34px 16px;text-align:center;cursor:pointer;color:var(--mut)}
+.drop:hover,.drop.over{border-color:var(--acc);color:var(--fg)}
+.drop small{font-size:12px}
+.files{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.file{display:grid;grid-template-columns:1fr auto;gap:2px 12px;background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:8px 12px;font-size:12px}
+.file b{font-size:13px}
+.file .h{font-family:var(--mono);color:var(--mut);word-break:break-all;grid-column:1}
+.file button{grid-row:1/span 3;grid-column:2;align-self:center}
+
+.preview{margin-top:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.chip{background:var(--line2);border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600}
+.plist{max-height:220px;overflow:auto;border:1px solid var(--line2);border-radius:8px;font-size:12px}
+.plist div{display:flex;gap:10px;padding:3px 10px;border-bottom:1px solid var(--line2)}
+.plist div:last-child{border:0}
+.plist span{color:var(--mut);width:56px;flex:none}
+.plist code{font-family:var(--mono);word-break:break-all}
+
+/* results */
+#results{scroll-margin-top:72px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+@media (max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;box-shadow:var(--shadow)}
+.stat b{display:block;font-size:24px;line-height:1.2;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut)}
+.stat.malicious b{color:var(--mal)}.stat.suspicious b{color:var(--sus)}.stat.clean b{color:var(--cln)}.stat.not_found b{color:var(--nf)}
+.rescontrols{margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--nf);border-radius:12px;margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow)}
+.card[data-verdict=malicious]{border-left-color:var(--mal)}
+.card[data-verdict=suspicious]{border-left-color:var(--sus)}
+.card[data-verdict=clean],.card[data-verdict=info]{border-left-color:var(--cln)}
+.card[data-verdict=error]{border-left-color:var(--err)}
+.card>header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line2)}
+.card .val{font-size:14px;font-weight:600;word-break:break-all}
+.meta{font-size:12px;color:var(--mut)}
+.meta.local{color:var(--inf);font-weight:600}
+.card .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.cardbtns{display:flex;gap:6px;margin-top:4px}
+.badge{display:inline-block;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:700;letter-spacing:.03em;white-space:nowrap;background:var(--nf-bg);color:var(--nf)}
+.badge.big{font-size:12px;padding:3px 11px}
+.badge.malicious{background:var(--mal-bg);color:var(--mal)}
+.badge.suspicious{background:var(--sus-bg);color:var(--sus)}
+.badge.clean{background:var(--cln-bg);color:var(--cln)}
+.badge.info{background:var(--inf-bg);color:var(--inf)}
+.badge.error{background:var(--err-bg);color:var(--err)}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:7px 16px;border-bottom:1px solid var(--line2);vertical-align:top}
+th{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;font-weight:700;background:var(--card2)}
+tr:last-child td{border-bottom:0}
+td.src{font-weight:600;white-space:nowrap}
+.restable{table-layout:fixed;min-width:640px}
+.restable th:nth-child(1){width:190px}.restable th:nth-child(2){width:120px}.restable th:nth-child(3){width:150px}
+.restable td{overflow-wrap:anywhere}
+td.sc{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.errtxt{color:var(--err)}
+details{margin-top:3px}
+summary{cursor:pointer;color:var(--mut);font-size:12px}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 14px;margin:6px 0 2px;font-size:12px}
+dt{color:var(--mut)}dd{margin:0;word-break:break-word}
+.empty{text-align:center;color:var(--mut);padding:40px 16px}
+
+/* db table */
+.dbtable td{font-size:13px}
+.dbtable td.v{font-family:var(--mono);font-size:12px;word-break:break-all;min-width:220px}
+.dbtable td.d{white-space:nowrap;font-size:12px;color:var(--mut)}
+.dbtable td.x{font-size:12px;color:var(--mut);max-width:260px}
+.dbtable td.a{white-space:nowrap;text-align:right}
+.dbtable th:first-child,.dbtable td:first-child{width:34px;padding-right:0}
+.tag{display:inline-block;background:var(--inf-bg);color:var(--inf);border-radius:5px;padding:0 6px;margin:0 3px 2px 0;font-size:11px;font-weight:600}
+.addres{margin-top:10px;font-size:12px;display:flex;flex-direction:column;gap:2px;max-height:150px;overflow:auto}
+.addres .added{color:var(--cln)}.addres .updated{color:var(--inf)}.addres .invalid{color:var(--mal)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line2)}
+.toolbar input[type=search]{min-width:220px;flex:1}
+.panel.flush{padding:0;overflow:hidden}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;font-size:13px}
+.kv dt{color:var(--mut)}.kv dd{font-family:var(--mono);font-size:12px;word-break:break-all}
+.ok{color:var(--cln);font-weight:600}.no{color:var(--mal);font-weight:600}.opt{color:var(--mut)}
+
+.banner{background:var(--inf-bg);color:var(--inf);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;font-size:13px;font-weight:500}
+.keys{display:flex;flex-direction:column}
+.keyrow{display:grid;grid-template-columns:230px 1fr 200px;gap:6px 16px;align-items:center;padding:12px 0;border-top:1px solid var(--line2)}
+.keyrow:first-child{border-top:0;padding-top:4px}
+.keyrow .name b{display:block}
+.keyrow .name small{display:block;color:var(--mut);font-size:12px;line-height:1.35}
+.keylink{font-size:12px;font-weight:600;text-decoration:none}
+.keylink:hover{text-decoration:underline}
+.keyin{display:flex;gap:6px}
+.keyin input{flex:1;min-width:0;font-family:var(--mono);font-size:13px}
+.keyrow .st{display:flex;gap:8px;align-items:center;justify-content:flex-end;font-size:13px}
+@media (max-width:760px){.keyrow{grid-template-columns:1fr}.keyrow .st{justify-content:flex-start}}
+#toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:50;max-width:min(420px,calc(100vw - 36px))}
+.toast{background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;font-size:13px;box-shadow:0 6px 20px #0003;transition:opacity .4s,transform .4s}
+.toast.err{background:#c62828;color:#fff}.toast.warn{background:#a85d00;color:#fff}.toast.ok{background:#2e7d32;color:#fff}
+.toast.out{opacity:0;transform:translateY(6px)}
+.spin{width:14px;height:14px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#c62828"/><circle cx="14" cy="14" r="7" fill="none" stroke="#fff" stroke-width="3"/><path d="M19 19l6 6" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
+    ZUHAN <span class="ver" id="ver"></span>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="scan" class="active">Scan</button>
+    <button data-tab="db">IOC List <span class="pill" id="dbCount">0</span></button>
+    <button data-tab="sources">Sources &amp; API keys</button>
+  </nav>
+  <div class="local-note"><span class="dot"></span>Running on this computer only</div>
+</div></header>
+
+<main>
+<!-- ============ SCAN ============ -->
+<section id="tab-scan" class="tab">
+  <div class="banner" id="keyBanner" hidden>
+    <span>No API keys yet. Only sources that need no key (local list, OTX, GreyNoise, Shodan) will be queried.</span>
+    <button class="btn tiny" id="goKeys">Add API keys →</button>
+  </div>
+  <div class="panel">
+    <div class="seg" id="mode">
+      <button data-mode="iocs" class="active">IOCs</button>
+      <button data-mode="dump">Dump / log</button>
+      <button data-mode="files">File hash</button>
+    </div>
+
+    <div class="mode" data-mode="iocs">
+      <textarea id="iocInput" spellcheck="false" placeholder="One IOC per line: hash, IP, domain or URL&#10;&#10;44d88612fea8a8f36de82e1278abb02f&#10;185.220.101.1&#10;hxxp://evil[.]com/payload   ← defanged input works too"></textarea>
+      <p class="hint">Press Ctrl+Enter to scan.</p>
+    </div>
+
+    <div class="mode" data-mode="dump" hidden>
+      <textarea id="dumpInput" spellcheck="false" placeholder="Paste a sandbox API-call trace, proxy/firewall log, raw JSON API response, threat report text…&#10;Hashes, IPs, domains and URLs inside it are extracted automatically."></textarea>
+      <div class="row" style="margin-top:10px">
+        <label class="btn ghost">Load from file<input type="file" id="dumpFile" hidden></label>
+        <button class="btn ghost" id="previewBtn">Preview (no lookups)</button>
+        <label class="chk"><input type="checkbox" id="keepPrivate"> Include private IPs</label>
+        <label class="num">Scan at most <input type="number" id="maxIocs" value="100" min="0"> IOCs</label>
+      </div>
+      <div id="preview" class="preview"></div>
+    </div>
+
+    <div class="mode" data-mode="files" hidden>
+      <label class="drop" id="drop">
+        <span>Drop files here or <u>browse</u></span>
+        <small>Files are only hashed on this computer (MD5/SHA1/SHA256); the file itself is never sent anywhere.</small>
+        <input type="file" id="hashFiles" multiple hidden>
+      </label>
+      <div class="files" id="fileList"></div>
+    </div>
+
+    <div class="opts">
+      <div class="srcchips" id="srcChips"></div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="optOffline"> Local list only (no internet)</label>
+        <label class="chk"><input type="checkbox" id="optSave" checked> Add malicious results to the list</label>
+        <label class="chk"><input type="checkbox" id="optSaveSus"> Also add suspicious</label>
+      </div>
+    </div>
+
+    <div class="row actions">
+      <button class="btn primary" id="scanBtn">Scan</button>
+      <button class="btn ghost" id="cancelBtn" hidden>Cancel</button>
+      <div class="progress" id="progress" hidden><div class="bar"><i id="bar"></i></div><span id="progText"></span></div>
+    </div>
+  </div>
+
+  <div id="results" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="row between rescontrols">
+      <div class="seg small" id="resFilter">
+        <button data-f="all" class="active">All</button>
+        <button data-f="malicious">Malicious</button>
+        <button data-f="suspicious">Suspicious</button>
+        <button data-f="clean">Clean</button>
+        <button data-f="not_found">Not found</button>
+      </div>
+      <div class="row">
+        <span class="meta">Download report:</span>
+        <button class="btn tiny" data-rep="html">HTML</button>
+        <button class="btn tiny" data-rep="json">JSON</button>
+        <button class="btn tiny" data-rep="csv">CSV</button>
+        <button class="btn tiny" data-rep="md">Markdown</button>
+      </div>
+    </div>
+    <div id="cards"></div>
+  </div>
+</section>
+
+<!-- ============ IOC LIST ============ -->
+<section id="tab-db" class="tab" hidden>
+  <div class="grid2">
+    <div class="panel">
+      <h2>Add IOCs</h2>
+      <textarea id="addInput" spellcheck="false" style="min-height:96px" placeholder="One or more IOCs (one per line)"></textarea>
+      <div class="row" style="margin-top:10px">
+        <label class="field"><span>Tags (comma separated)</span><input type="text" id="addTags" placeholder="c2, emotet, case-42"></label>
+        <label class="field"><span>Note</span><input type="text" id="addNote" placeholder="e.g. SOC ticket 1234"></label>
+        <label class="field" style="flex:0 0 130px"><span>Verdict</span><select id="addVerdict"><option value="malicious">Malicious</option><option value="suspicious">Suspicious</option></select></label>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="addBtn">Add to list</button></div>
+      <div class="addres" id="addRes"></div>
+    </div>
+    <div class="panel">
+      <h2>Import from file</h2>
+      <p class="hint" style="margin-top:0">A plain IOC list, a log / sandbox dump, or a ZUHAN JSON backup.</p>
+      <div class="row" style="margin-top:10px">
+        <label class="btn">Choose file<input type="file" id="impFile" hidden></label>
+        <span class="meta" id="impName">no file chosen</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="field"><span>Tags (comma separated)</span><input type="text" id="impTags" placeholder="feed-x, sandbox"></label>
+        <label class="field" style="flex:0 0 130px"><span>Verdict</span><select id="impVerdict"><option value="malicious">Malicious</option><option value="suspicious">Suspicious</option></select></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="chk"><input type="checkbox" id="impPrivate"> Include private IPs</label>
+        <button class="btn primary" id="impBtn" disabled>Import</button>
+      </div>
+      <div class="warnbox">When importing a dump, <b>every</b> IOC in it is added to the list. Check what will be found first with Scan → Dump / log → Preview.</div>
+    </div>
+  </div>
+
+  <div class="panel flush">
+    <div class="toolbar">
+      <select id="fType">
+        <option value="">All types</option><option value="ip">IP</option><option value="domain">Domain</option>
+        <option value="url">URL</option><option value="hash">Hash</option>
+      </select>
+      <select id="fOrigin">
+        <option value="">All origins</option><option value="manual">Added manually</option>
+        <option value="auto">Automatic (from scans)</option><option value="import">Imported</option>
+      </select>
+      <input type="search" id="fSearch" placeholder="Search value, tag, note…">
+      <span class="meta" id="dbInfo"></span>
+      <span style="flex:1"></span>
+      <button class="btn tiny danger" id="delSel" disabled>Delete selected</button>
+      <span class="meta">Export:</span>
+      <button class="btn tiny" data-exp="txt" title="One value per line (blocklist)">TXT</button>
+      <button class="btn tiny" data-exp="csv">CSV</button>
+      <button class="btn tiny" data-exp="json" title="Full backup, can be re-imported">JSON</button>
+    </div>
+    <div class="tablewrap">
+      <table class="dbtable">
+        <thead><tr><th><input type="checkbox" id="selAll"></th><th>Type</th><th>Value</th><th>Verdict</th><th>Origin</th><th>Hits</th><th>First seen</th><th>Last seen</th><th>Tags / note</th><th></th></tr></thead>
+        <tbody id="dbBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="dbEmpty" hidden></div>
+  </div>
+</section>
+
+<!-- ============ SOURCES & KEYS ============ -->
+<section id="tab-sources" class="tab" hidden>
+  <div class="panel">
+    <h2 style="margin-bottom:4px">API keys</h2>
+    <p class="hint" style="margin:0 0 12px">Paste a key and press <b>Save</b>; it takes effect immediately. Keys are only written to the config file on this computer and are never shown again after saving, only their last 4 characters. Fields you leave empty are not changed.</p>
+    <div class="keys" id="keysList"></div>
+    <div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line2)">
+      <button class="btn primary" id="keysSave">Save</button>
+      <span class="meta" id="keysPath"></span>
+    </div>
+  </div>
+  <div class="panel flush">
+    <div class="tablewrap"><table>
+      <thead><tr><th>ID</th><th>Source</th><th>IOC types</th><th>API key</th></tr></thead>
+      <tbody id="srcBody"></tbody>
+    </table></div>
+  </div>
+  <div class="panel">
+    <h2>Files</h2>
+    <dl class="kv" id="paths"></dl>
+    <p class="hint">Keys can also come from environment variables (e.g. <code>VT_API_KEY</code>); an environment variable overrides the value in the config file.</p>
+  </div>
+</section>
+</main>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+"use strict";
+const TOKEN = "__ZUHAN_TOKEN__";
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) {
+    if (k == null || k === false) continue;
+    e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  }
+  return e;
+}
+
+async function api(path, opts = {}) {
+  const o = { method: opts.body !== undefined ? "POST" : "GET", headers: { "X-Zuhan-Token": TOKEN }, signal: opts.signal };
+  if (opts.body !== undefined) {
+    if (opts.body instanceof FormData) o.body = opts.body;
+    else { o.body = JSON.stringify(opts.body); o.headers["Content-Type"] = "application/json"; }
+  }
+  let r;
+  try { r = await fetch(path, o); }
+  catch (e) {
+    if (e.name === "AbortError") throw e;
+    throw new Error("Can't reach ZUHAN — is 'zuhan web' still running in the terminal?");
+  }
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.json()).error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  if (opts.raw) return r;
+  return r.json();
+}
+
+function toast(msg, kind) {
+  const t = el("div", { class: "toast " + (kind || ""), text: msg });
+  $("#toasts").append(t);
+  setTimeout(() => t.classList.add("out"), kind === "err" ? 6000 : 3500);
+  setTimeout(() => t.remove(), kind === "err" ? 6500 : 4000);
+}
+
+const STATUS = { malicious: "MALICIOUS", suspicious: "SUSPICIOUS", clean: "CLEAN", info: "INFO", not_found: "NOT FOUND", skipped: "SKIPPED", error: "ERROR" };
+const ORIGIN = { manual: "manual", auto: "automatic", import: "import" };
+const KEYSTATUS = { local: ["local", "ok"], configured: ["✓ configured", "ok"], missing: ["✗ no key", "no"], optional: ["optional", "opt"], free: ["not needed", "opt"] };
+const badge = (s, big) => el("span", { class: "badge " + s + (big ? " big" : ""), text: STATUS[s] || s });
+const fmtDate = s => { const d = new Date(s); return isNaN(d) ? "" : d.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" }); };
+const safeLink = u => typeof u === "string" && /^https?:\/\//i.test(u);
+
+function saveBlob(blob, name) {
+  const a = el("a", { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+async function download(path, body, fallback) {
+  try {
+    const r = await api(path, { body, raw: true });
+    const m = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") || "");
+    saveBlob(await r.blob(), m ? m[1] : fallback);
+  } catch (e) { toast(e.message, "err"); }
+}
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied"); }
+  catch (_) { toast("Could not copy", "warn"); }
+}
+function readFile(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(fr.error);
+    fr.readAsText(file);
+  });
+}
+
+/* ---------------- tabs ---------------- */
+function showTab(name) {
+  $$(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  $$(".tab").forEach(t => t.hidden = t.id !== "tab-" + name);
+  if (name === "db") loadDB();
+  if (name === "sources") { loadInfo(); loadKeys(); }
+}
+$$(".tabs button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+/* ---------------- info / sources ---------------- */
+let INFO = null;
+async function loadInfo() {
+  try { INFO = await api("/api/info"); } catch (e) { toast(e.message, "err"); return; }
+  $("#ver").textContent = "v" + INFO.version;
+  $("#dbCount").textContent = INFO.db_count;
+
+  const chips = $("#srcChips");
+  const prev = new Map($$("#srcChips input").filter(i => !i.disabled).map(i => [i.value, i.checked]));
+  chips.replaceChildren(el("span", { class: "meta", style: "align-self:center;margin-right:4px", text: "Sources:" }));
+  for (const s of INFO.sources) {
+    const off = s.status === "missing";
+    const cb = el("input", { type: "checkbox", value: s.id, disabled: off });
+    cb.checked = !off && (prev.has(s.id) ? prev.get(s.id) : true);
+    chips.append(el("label", { class: "srcchip" + (off ? " off" : ""), title: off ? "No API key configured (Sources & API keys tab)" : s.types.join(", ") },
+      cb, s.name, off ? el("span", { class: "k", text: "no key" }) : null));
+  }
+
+  $("#keyBanner").hidden = INFO.sources.some(s => s.status === "configured") || !INFO.sources.some(s => s.status === "missing");
+
+  $("#srcBody").replaceChildren(...INFO.sources.map(s => {
+    const [txt, cls] = KEYSTATUS[s.status] || [s.status, "opt"];
+    return el("tr", {}, el("td", { class: "mono", text: s.id }), el("td", { class: "src", text: s.name }),
+      el("td", { class: "meta", text: s.types.join(", ") }), el("td", {}, el("span", { class: cls, text: txt })));
+  }));
+  $("#paths").replaceChildren(
+    el("dt", { text: "Config (API keys)" }), el("dd", { text: INFO.config_path || "—" }),
+    el("dt", { text: "Local IOC list" }), el("dd", { text: INFO.db_path }));
+}
+const selectedSources = () => $$("#srcChips input:checked").map(i => i.value);
+
+/* ---------------- scan: input modes ---------------- */
+let mode = "iocs", hashed = [];
+$$("#mode button").forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  $$("#mode button").forEach(x => x.classList.toggle("active", x === b));
+  $$(".mode").forEach(m => m.hidden = m.dataset.mode !== mode);
+});
+$("#optOffline").onchange = e => {
+  $("#srcChips").style.opacity = e.target.checked ? .4 : 1;
+  $("#optSave").disabled = $("#optSaveSus").disabled = e.target.checked;
+};
+for (const id of ["#iocInput", "#dumpInput"]) {
+  $(id).addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runScan(); } });
+}
+
+$("#dumpFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  if (f.size > 64 * 1024 * 1024) { toast("File is larger than 64 MB", "err"); return; }
+  $("#dumpInput").value = await readFile(f);
+  toast(f.name + " loaded");
+  preview();
+};
+$("#previewBtn").onclick = preview;
+async function preview() {
+  const text = $("#dumpInput").value;
+  if (!text.trim()) { toast("Paste a dump first", "warn"); return; }
+  try {
+    const r = await api("/api/extract", { body: { text, keep_private: $("#keepPrivate").checked } });
+    const order = ["md5", "sha1", "sha256", "ipv4", "ipv6", "domain", "url"];
+    $("#preview").replaceChildren(
+      el("div", { class: "chips" }, el("span", { class: "chip", text: r.iocs.length + " IOCs found" }),
+        order.filter(t => r.counts[t]).map(t => el("span", { class: "chip", text: `${t} ${r.counts[t]}` }))),
+      r.iocs.length ? el("div", { class: "plist" }, r.iocs.slice(0, 500).map(i => el("div", {}, el("span", { text: i.type }), el("code", { text: i.value })))) : null);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+const drop = $("#drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); hashFiles(e.dataTransfer.files); });
+$("#hashFiles").onchange = e => { hashFiles(e.target.files); e.target.value = ""; };
+async function hashFiles(list) {
+  if (!list || !list.length) return;
+  const fd = new FormData();
+  for (const f of list) fd.append("file", f, f.name);
+  toast("Hashing " + list.length + " file(s)…");
+  try {
+    const r = await api("/api/hash", { body: fd });
+    hashed = hashed.concat(r.files);
+    renderFiles();
+  } catch (e) { toast(e.message, "err"); }
+}
+function renderFiles() {
+  $("#fileList").replaceChildren(...hashed.map((f, i) => el("div", { class: "file" },
+    el("b", { text: f.name + "  ·  " + f.size.toLocaleString("en-US") + " bytes" }),
+    el("div", { class: "h", text: "SHA256 " + f.sha256 }),
+    el("div", { class: "h", text: "MD5 " + f.md5 + "   SHA1 " + f.sha1 }),
+    el("button", { class: "btn tiny ghost", text: "Remove", onclick: () => { hashed.splice(i, 1); renderFiles(); } }))));
+}
+
+/* ---------------- scan: run ---------------- */
+let lastReports = [], scanCtl = null, resFilter = "all";
+function setBusy(b) {
+  $("#scanBtn").disabled = b;
+  $("#scanBtn").replaceChildren(b ? el("span", { class: "spin" }) : "", b ? " Scanning" : "Scan");
+  $("#cancelBtn").hidden = !b;
+  $("#progress").hidden = !b;
+}
+function progress(done, total) {
+  $("#bar").style.width = (total ? Math.round(done / total * 100) : 0) + "%";
+  $("#progText").textContent = `${done} / ${total} IOC`;
+}
+$("#scanBtn").onclick = runScan;
+$("#cancelBtn").onclick = () => scanCtl && scanCtl.abort();
+
+async function runScan() {
+  if (scanCtl) return;
+  const body = {
+    values: "", dump: "", files: [],
+    sources: selectedSources(),
+    offline: $("#optOffline").checked,
+    save: $("#optSave").checked,
+    save_suspicious: $("#optSaveSus").checked,
+    keep_private: $("#keepPrivate").checked,
+    max: Math.max(0, parseInt($("#maxIocs").value, 10) || 0),
+  };
+  if (mode === "iocs") body.values = $("#iocInput").value;
+  else if (mode === "dump") body.dump = $("#dumpInput").value;
+  else body.files = hashed;
+  if (!body.values.trim() && !body.dump.trim() && !body.files.length) {
+    toast(mode === "files" ? "Choose a file first" : "Enter an IOC first", "warn"); return;
+  }
+  if (!body.offline && !body.sources.length) { toast("Select at least one source", "warn"); return; }
+
+  scanCtl = new AbortController();
+  setBusy(true); progress(0, 0);
+  try {
+    const r = await api("/api/scan", { body, raw: true, signal: scanCtl.signal });
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (line.trim()) onEvent(JSON.parse(line));
+      }
+    }
+  } catch (e) {
+    if (e.name === "AbortError") toast("Scan cancelled", "warn");
+    else toast(e.message, "err");
+  } finally { setBusy(false); scanCtl = null; }
+}
+
+function onEvent(ev) {
+  if (ev.type === "start") {
+    progress(0, ev.total);
+    if (ev.skipped && ev.skipped.length)
+      toast(`Skipped ${ev.skipped.length} invalid input(s): ${ev.skipped.slice(0, 3).join(", ")}${ev.skipped.length > 3 ? "…" : ""}`, "warn");
+    if (ev.extracted) {
+      const t = ev.extracted.truncated || 0;
+      toast(`Scanning ${ev.extracted.iocs.length} IOC(s) from the dump${t ? ` (${t} skipped because of the "at most" limit)` : ""}`);
+    }
+  } else if (ev.type === "progress") {
+    progress(ev.done, ev.total);
+  } else if (ev.type === "result") {
+    lastReports = ev.reports || [];
+    renderResults(ev.summary);
+    if (ev.save_error) toast("Could not update the local list: " + ev.save_error, "err");
+    const added = lastReports.filter(r => r.local_db === "added").length;
+    if (added) toast(`${added} malicious IOC(s) added to the local list`, "ok");
+    loadInfo();
+  }
+}
+
+function renderResults(sum) {
+  $("#results").hidden = false;
+  const tiles = [["", "IOCs", sum.Total], ["malicious", "Malicious", sum.Malicious], ["suspicious", "Suspicious", sum.Suspicious],
+                 ["clean", "Clean", sum.Clean], ["not_found", "Not found", sum.NotFound]];
+  $("#stats").replaceChildren(...tiles.map(([c, l, n]) => el("div", { class: "stat " + c }, el("b", { text: n }), el("span", { text: l }))));
+  renderCards();
+  $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$$("#resFilter button").forEach(b => b.onclick = () => {
+  resFilter = b.dataset.f;
+  $$("#resFilter button").forEach(x => x.classList.toggle("active", x === b));
+  renderCards();
+});
+function matchFilter(r) {
+  if (resFilter === "all") return true;
+  if (resFilter === "clean") return r.verdict === "clean" || r.verdict === "info";
+  return r.verdict === resFilter;
+}
+function renderCards() {
+  const reps = lastReports.filter(matchFilter);
+  $("#cards").replaceChildren(...(reps.length ? reps.map(card) : [el("div", { class: "panel empty", text: "No results for this filter." })]));
+}
+const LOCALTXT = { added: "✚ Added to local list", updated: "↻ Updated in local list", matched: "● Already in local list" };
+function card(rep) {
+  const i = rep.ioc, meta = [i.type];
+  if (i.raw && i.raw !== i.value) meta.push("input: " + i.raw);
+  for (const k of ["md5", "sha1", "size"]) if (i.meta && i.meta[k] && i.meta[k] !== i.value) meta.push(`${k}: ${i.meta[k]}`);
+  const rows = (rep.results || []).map(r => el("tr", {},
+    el("td", { class: "src" }, safeLink(r.link) ? el("a", { href: r.link, target: "_blank", rel: "noopener noreferrer", text: r.source }) : r.source),
+    el("td", {}, badge(r.status)),
+    el("td", { class: "sc", text: r.score || "" }),
+    el("td", {}, r.error ? el("span", { class: "errtxt", text: r.error }) : (r.summary || ""),
+      r.fields && r.fields.length ? el("details", {}, el("summary", { text: r.fields.length + " fields" }),
+        el("dl", {}, r.fields.map(f => [el("dt", { text: f.key }), el("dd", { text: f.value })]))) : null)));
+  const listed = rep.local_db || (rep.results || []).some(r => r.source === "Local IOC DB" && (r.status === "malicious" || r.status === "suspicious"));
+  return el("article", { class: "card", "data-verdict": rep.verdict },
+    el("header", {},
+      el("div", {}, el("div", { class: "val mono", text: i.value }), el("div", { class: "meta", text: meta.join(" · ") })),
+      el("div", { class: "right" },
+        badge(rep.verdict, true),
+        el("div", { class: "meta", text: `${rep.flagged}/${rep.queried} sources flagged` }),
+        rep.local_db ? el("div", { class: "meta local", text: LOCALTXT[rep.local_db] || rep.local_db }) : null,
+        el("div", { class: "cardbtns" },
+          el("button", { class: "btn tiny ghost", text: "Copy", onclick: () => copy(i.value) }),
+          listed ? null : el("button", { class: "btn tiny ghost", text: "Add to list", onclick: e => quickAdd(i.value, e.target) })))),
+    rows.length ? el("div", { class: "tablewrap" }, el("table", { class: "restable" },
+      el("thead", {}, el("tr", {}, ["Source", "Status", "Score", "Details"].map(h => el("th", { text: h })))),
+      el("tbody", {}, rows))) : el("div", { class: "empty", text: "No selected source supports this IOC type." }));
+}
+async function quickAdd(value, btn) {
+  try {
+    await api("/api/db/add", { body: { values: value, verdict: "malicious", note: "added from web UI" } });
+    btn.replaceWith(el("span", { class: "meta local", text: "✚ added" }));
+    toast(value + " added to the list", "ok");
+    loadInfo();
+  } catch (e) { toast(e.message, "err"); }
+}
+$$("[data-rep]").forEach(b => b.onclick = () => {
+  if (!lastReports.length) return;
+  download("/api/report?format=" + b.dataset.rep, { reports: lastReports }, "zuhan-report." + b.dataset.rep);
+});
+
+/* ---------------- IOC list ---------------- */
+let dbEntries = [];
+function dbQuery() {
+  const q = new URLSearchParams();
+  if ($("#fType").value) q.set("type", $("#fType").value);
+  if ($("#fOrigin").value) q.set("origin", $("#fOrigin").value);
+  if ($("#fSearch").value.trim()) q.set("search", $("#fSearch").value.trim());
+  return q;
+}
+async function loadDB() {
+  let r;
+  try { r = await api("/api/db?" + dbQuery()); } catch (e) { toast(e.message, "err"); return; }
+  dbEntries = r.entries;
+  $("#dbCount").textContent = r.total;
+  $("#dbInfo").textContent = r.count === r.total ? `${r.total} entries` : `${r.count} / ${r.total} entries`;
+  $("#selAll").checked = false;
+  $("#dbBody").replaceChildren(...dbEntries.map(e => el("tr", {},
+    el("td", {}, el("input", { type: "checkbox", class: "sel", value: e.value })),
+    el("td", { text: e.type }),
+    el("td", { class: "v", text: e.value }),
+    el("td", {}, badge(e.verdict)),
+    el("td", { class: "d", text: ORIGIN[e.origin] || e.origin }),
+    el("td", { class: "d", text: e.hits }),
+    el("td", { class: "d", text: fmtDate(e.first_seen) }),
+    el("td", { class: "d", text: fmtDate(e.last_seen) }),
+    el("td", { class: "x" },
+      (e.tags || []).map(t => el("span", { class: "tag", text: t })),
+      e.sources && e.sources.length ? el("div", { text: "flagged by: " + e.sources.join(", ") }) : null,
+      e.note ? el("div", { text: e.note }) : null),
+    el("td", { class: "a" },
+      el("button", { class: "btn tiny ghost", text: "Scan", onclick: () => scanValue(e.value) }), " ",
+      el("button", { class: "btn tiny ghost danger", text: "Delete", onclick: () => del([e.value]) })))));
+  const empty = !dbEntries.length;
+  $("#dbEmpty").hidden = !empty;
+  $("#dbEmpty").textContent = r.total ? "No entries match the filter." : "The list is empty. Add IOCs above or run a scan: malicious results are added here automatically.";
+  updateSel();
+}
+function updateSel() { $("#delSel").disabled = !$$(".sel:checked").length; }
+$("#dbBody").addEventListener("change", updateSel);
+$("#selAll").onchange = e => { $$(".sel").forEach(c => c.checked = e.target.checked); updateSel(); };
+$("#fType").onchange = loadDB;
+$("#fOrigin").onchange = loadDB;
+let searchT;
+$("#fSearch").oninput = () => { clearTimeout(searchT); searchT = setTimeout(loadDB, 250); };
+$("#delSel").onclick = () => del($$(".sel:checked").map(c => c.value));
+async function del(values) {
+  if (!values.length) return;
+  if (!confirm(values.length === 1 ? `Delete ${values[0]} from the list?` : `Delete ${values.length} entries from the list?`)) return;
+  try {
+    const r = await api("/api/db/delete", { body: { values } });
+    toast(r.deleted + " entr" + (r.deleted === 1 ? "y" : "ies") + " deleted");
+    loadDB();
+  } catch (e) { toast(e.message, "err"); }
+}
+function scanValue(v) {
+  showTab("scan");
+  $$("#mode button")[0].click();
+  $("#iocInput").value = v;
+  runScan();
+}
+$$("[data-exp]").forEach(b => b.onclick = () => {
+  const q = dbQuery(); q.set("format", b.dataset.exp);
+  download("/api/db/export?" + q, undefined, "zuhan-list." + b.dataset.exp);
+});
+
+$("#addBtn").onclick = async () => {
+  const values = $("#addInput").value;
+  if (!values.trim()) { toast("Enter an IOC first", "warn"); return; }
+  try {
+    const r = await api("/api/db/add", { body: { values, tags: $("#addTags").value, note: $("#addNote").value, verdict: $("#addVerdict").value } });
+    const T = { added: "+ added", updated: "~ updated", invalid: "! not an IOC" };
+    $("#addRes").replaceChildren(...r.items.map(i => el("div", { class: i.result },
+      `${T[i.result]}  `, el("span", { class: "mono", text: i.value || i.input }), i.type ? `  (${i.type})` : "")));
+    toast(`${r.added} added, ${r.updated} updated${r.invalid ? `, ${r.invalid} invalid` : ""}`, r.added + r.updated ? "ok" : "warn");
+    if (r.added + r.updated) $("#addInput").value = "";
+    loadDB();
+  } catch (e) { toast(e.message, "err"); }
+};
+
+let impFile = null;
+$("#impFile").onchange = e => {
+  impFile = e.target.files[0] || null; e.target.value = "";
+  $("#impName").textContent = impFile ? impFile.name : "no file chosen";
+  $("#impBtn").disabled = !impFile;
+};
+$("#impBtn").onclick = async () => {
+  if (!impFile) return;
+  if (impFile.size > 64 * 1024 * 1024) { toast("File is larger than 64 MB", "err"); return; }
+  try {
+    const text = await readFile(impFile);
+    const r = await api("/api/db/import", { body: { text, name: impFile.name, tags: $("#impTags").value, verdict: $("#impVerdict").value, keep_private: $("#impPrivate").checked } });
+    toast(`${impFile.name}: ${r.found} IOC(s) found → ${r.added} added, ${r.updated} updated`, r.found ? "ok" : "warn");
+    impFile = null; $("#impName").textContent = "no file chosen"; $("#impBtn").disabled = true;
+    loadDB();
+  } catch (e) { toast(e.message, "err"); }
+};
+
+/* ---------------- API keys ---------------- */
+$("#goKeys").onclick = () => showTab("sources");
+async function loadKeys() {
+  let r;
+  try { r = await api("/api/keys"); } catch (e) { toast(e.message, "err"); return; }
+  $("#keysSave").disabled = !r.editable;
+  $("#keysPath").textContent = r.config_path ? "Config file: " + r.config_path : "";
+  $("#keysList").replaceChildren(...r.keys.map(k => {
+    const inp = el("input", {
+      type: "password", autocomplete: "off", spellcheck: "false", "data-id": k.id,
+      disabled: !r.editable || k.from_env,
+      placeholder: k.from_env ? "set by the " + k.env + " environment variable"
+        : k.set ? "saved (" + k.masked + ") — paste a new key to replace it" : "paste your key here",
+    });
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") saveKeys(); });
+    const toggle = el("button", { class: "btn tiny ghost", type: "button", text: "Show", onclick: e => {
+      inp.type = inp.type === "password" ? "text" : "password";
+      e.target.textContent = inp.type === "password" ? "Show" : "Hide";
+    } });
+    const status = k.from_env ? el("span", { class: "opt", text: "environment variable" })
+      : k.set ? el("span", { class: "ok", text: "✓ saved " + k.masked.slice(-4) })
+      : el("span", { class: "opt", text: "empty" });
+    return el("div", { class: "keyrow" },
+      el("div", { class: "name" }, el("b", { text: k.label }), k.note ? el("small", { text: k.note }) : null,
+        safeLink(k.url) ? el("a", { class: "keylink", href: k.url, target: "_blank", rel: "noopener noreferrer", text: "get a key ↗" }) : null),
+      el("div", { class: "keyin" }, inp, toggle),
+      el("div", { class: "st" }, status,
+        k.set && !k.from_env && r.editable ? el("button", { class: "btn tiny ghost danger", text: "Delete", onclick: () => clearKey(k) }) : null));
+  }));
+}
+async function saveKeys() {
+  const set = {};
+  $$("#keysList input[data-id]").forEach(i => { if (i.value.trim()) set[i.dataset.id] = i.value.trim(); });
+  const n = Object.keys(set).length;
+  if (!n) { toast("Paste a key first", "warn"); return; }
+  try {
+    await api("/api/keys", { body: { set } });
+    toast(n + " key(s) saved and active", "ok");
+    await loadKeys(); loadInfo();
+  } catch (e) { toast(e.message, "err"); }
+}
+async function clearKey(k) {
+  if (!confirm("Delete the " + k.label + " key?")) return;
+  try {
+    await api("/api/keys", { body: { clear: [k.id] } });
+    toast(k.label + " key deleted");
+    await loadKeys(); loadInfo();
+  } catch (e) { toast(e.message, "err"); }
+}
+$("#keysSave").onclick = saveKeys;
+
+loadInfo();
+</script>
+</body>
+</html>

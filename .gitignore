@@ -1,0 +1,27 @@
+# build output
+/bin/
+/dist/
+/zuhan
+*.exe
+*.test
+*.out
+coverage.*
+
+# never commit secrets or local intel data
+config.json
+iocdb.json
+.iocdb-*.tmp
+.config-*.tmp
+.env
+
+# generated reports
+zuhan-report-*
+zuhan-list-*
+rapor.*
+
+# editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

