@@ -66,6 +66,7 @@ func (c *cli) web(argv []string) int {
 	}
 	srv.DBPath, srv.Version = db, version
 	srv.ConfigFile = config.Resolve(*cfgPath)
+	srv.WarninglistPath = config.WarninglistPath()
 	srv.Rebuild = func(k sources.Keys) *zuhan.Scanner { return zuhan.New(k, st) }
 	srv.ConfigPath = usedCfg
 	if srv.ConfigPath == "" {

@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/ioc"
 )
@@ -93,6 +96,83 @@ type Result struct {
 	Link       string  `json:"link,omitempty"`
 	Error      string  `json:"error,omitempty"`
 	DurationMS int64   `json:"duration_ms"`
+
+	// FirstSeen is the earliest time this source reported the IOC as a
+	// threat (first submission, first report…). Nil when unknown.
+	FirstSeen *time.Time `json:"first_seen,omitempty"`
+	// Techniques are MITRE ATT&CK technique IDs this source associates
+	// with the IOC (sandbox signatures, pulse tags…).
+	Techniques []Technique `json:"techniques,omitempty"`
+	// Benign, when set, says the IOC is known-good infrastructure
+	// (an allow-list hit) and why.
+	Benign string `json:"benign,omitempty"`
+	// Context is a neutral label worth knowing (e.g. "Tor exit node",
+	// "Known internet scanner") that does not change the verdict.
+	Context string `json:"context,omitempty"`
+	// LocalOnly marks results from sources that consult no outside intel
+	// (the local IOC list, warninglists); set by the engine.
+	LocalOnly bool `json:"local_only,omitempty"`
+}
+
+// LocalOnly is implemented by sources that never contact a third party.
+type LocalOnly interface{ LocalOnly() bool }
+
+// Technique is one MITRE ATT&CK technique reference.
+type Technique struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+// seen records t as a first-seen time if it is earlier than the current one.
+func (r *Result) seen(t time.Time) {
+	if t.IsZero() || t.After(time.Now().Add(24*time.Hour)) {
+		return
+	}
+	if r.FirstSeen == nil || t.Before(*r.FirstSeen) {
+		t = t.UTC()
+		r.FirstSeen = &t
+	}
+}
+
+// seenString parses common timestamp layouts and records the result.
+func (r *Result) seenString(v string) {
+	if t, ok := parseTime(v); ok {
+		r.seen(t)
+	}
+}
+
+// technique adds an ATT&CK technique once (IDs are normalised to upper case).
+func (r *Result) technique(id, name string) {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	if !techRe.MatchString(id) {
+		return
+	}
+	for _, t := range r.Techniques {
+		if t.ID == id {
+			return
+		}
+	}
+	r.Techniques = append(r.Techniques, Technique{ID: id, Name: strings.TrimSpace(name)})
+}
+
+var techRe = regexp.MustCompile(`^T\d{4}(\.\d{3})?$`)
+
+var timeLayouts = []string{
+	time.RFC3339, "2006-01-02 15:04:05 MST", "2006-01-02 15:04:05", "2006-01-02T15:04:05",
+	"2006-01-02 15:04:05 UTC", "2006-01-02",
+}
+
+func parseTime(v string) (time.Time, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}, false
+	}
+	for _, l := range timeLayouts {
+		if t, err := time.Parse(l, v); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func (r *Result) add(k, v string) {
@@ -120,6 +200,28 @@ func fail(r Result, err error) Result {
 	return r
 }
 
+// OptIn is implemented by sources that are only queried when explicitly
+// selected, e.g. active DNS lookups, which can tip off a name server the
+// attacker controls.
+type OptIn interface{ OptIn() bool }
+
+// IsOptIn reports whether s is only queried on request.
+func IsOptIn(s Source) bool {
+	o, ok := s.(OptIn)
+	return ok && o.OptIn()
+}
+
+// Default drops opt-in sources from list.
+func Default(list []Source) []Source {
+	var out []Source
+	for _, s := range list {
+		if !IsOptIn(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // Source is a threat-intelligence provider.
 type Source interface {
 	ID() string
@@ -138,6 +240,9 @@ type Keys struct {
 	AbuseCH        string
 	GreyNoise      string
 	HybridAnalysis string
+	Triage         string
+	URLScan        string
+	Mnemonic       string
 }
 
 // All returns every provider, configured with keys.
@@ -152,6 +257,11 @@ func All(k Keys) []Source {
 		&AbuseIPDB{Key: k.AbuseIPDB},
 		&GreyNoise{Key: k.GreyNoise},
 		&ShodanInternetDB{},
+		&Triage{Key: k.Triage},
+		&URLScan{Key: k.URLScan},
+		&PassiveDNS{Key: k.Mnemonic},
+		&RDAP{},
+		&DNS{},
 	}
 }
 
@@ -174,7 +284,39 @@ func (e *HTTPError) Error() string {
 	case 429:
 		return "HTTP 429: rate limit exceeded"
 	}
-	return fmt.Sprintf("HTTP %d: %s", e.Code, e.Body)
+	body := strings.TrimSpace(e.Body)
+	switch {
+	case strings.HasPrefix(body, "<"):
+		// an HTML error page says nothing useful
+		if e.Code >= 500 {
+			return fmt.Sprintf("HTTP %d: the service had an internal error, try again later", e.Code)
+		}
+		return fmt.Sprintf("HTTP %d", e.Code)
+	case strings.HasPrefix(body, "{"):
+		var m struct{ Message, Description, Error string }
+		if json.Unmarshal([]byte(e.Body), &m) == nil {
+			if msg := strings.TrimSpace(strings.Join(nonEmpty(m.Message, m.Description, m.Error), " — ")); msg != "" {
+				return fmt.Sprintf("HTTP %d: %s", e.Code, msg)
+			}
+		}
+	}
+	return fmt.Sprintf("HTTP %d: %s", e.Code, body)
+}
+
+func nonEmpty(v ...string) []string {
+	var out []string
+	for _, s := range v {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// isAuthOrRate reports errors that retrying with another query cannot fix.
+func isAuthOrRate(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && (he.Code == 401 || he.Code == 403 || he.Code == 429)
 }
 
 func do(ctx context.Context, req *http.Request, headers map[string]string, out any) (int, error) {
@@ -202,7 +344,7 @@ func do(ctx context.Context, req *http.Request, headers map[string]string, out a
 		return resp.StatusCode, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return resp.StatusCode, &HTTPError{resp.StatusCode, truncate(strings.Join(strings.Fields(string(body)), " "), 200)}
+		return resp.StatusCode, &HTTPError{resp.StatusCode, truncate(strings.Join(strings.Fields(string(body)), " "), 400)}
 	}
 	if out != nil && len(bytes.TrimSpace(body)) > 0 {
 		if err := json.Unmarshal(body, out); err != nil {

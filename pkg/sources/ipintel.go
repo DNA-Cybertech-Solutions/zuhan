@@ -125,8 +125,13 @@ func (s *GreyNoise) Query(ctx context.Context, i ioc.IOC) Result {
 	case cls == "malicious":
 		r.Status = StatusMalicious
 	case cls == "benign" || resp.RIOT:
+		r.Benign = "GreyNoise: known benign service"
+		if n := resp.Name.String(); n != "" && !strings.EqualFold(n, "unknown") {
+			r.Benign += " (" + n + ")"
+		}
 		r.Status = StatusClean
 	case resp.Noise:
+		r.Context = "Internet scanner (GreyNoise)"
 		r.Status = StatusSuspicious
 	default:
 		r.Status = StatusInfo

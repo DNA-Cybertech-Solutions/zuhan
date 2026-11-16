@@ -13,11 +13,22 @@ from the **command line**, from a **browser UI that runs only on your own machin
 ## Features
 
 - **One query, many sources:** VirusTotal, MalwareBazaar, ThreatFox, URLhaus, AlienVault OTX,
-  Hybrid Analysis, AbuseIPDB, GreyNoise and Shodan InternetDB are queried in parallel, and the
-  results are merged into one verdict.
+  Hybrid Analysis, Triage, urlscan.io, AbuseIPDB, GreyNoise, Shodan InternetDB, passive DNS
+  (mnemonic) and RDAP/WHOIS are queried in parallel, and the results are merged into one
+  verdict. Live DNS resolution is available on request.
+- **Fewer false positives:** the [MISP warninglists](https://github.com/MISP/misp-warninglists)
+  ship with ZUHAN. IOCs on a known-benign list (public DNS resolvers, popular sites, known
+  false-positive hashes…) are marked **KNOWN BENIGN**, a verdict that rests on a single source is
+  turned into clean, and they are never added to your list. Cloud ranges, Tor exit nodes, scanners and
+  shared hosting get a neutral **CONTEXT** label.
+- **What needs attention:** IOCs first reported in the last 7 days are marked **NEW**, and IOCs
+  no intel source has ever seen are marked **UNKNOWN** (could be brand new or targeted).
+- **MITRE ATT&CK:** techniques reported by OTX, Hybrid Analysis and Triage are collected per IOC
+  and for the whole scan, grouped by tactic, and can be exported as an
+  [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) layer.
 - **Local IOC list:** a persistent list of malicious IPs, domains, hashes and URLs. It is
   checked on every scan, and any IOC an external source reports as malicious is **added to it
-  automatically**. You can also add, import, search, export and delete entries yourself.
+  automatically** (optionally only when several sources agree: `-save-min 2`). You can also add, import, search, export and delete entries yourself.
   Subdomains of a listed domain are caught too.
 - **IOC extraction from dumps:** paste a sandbox trace, proxy log or JSON API response and the
   IOCs inside it are extracted. Defanged values are refanged, and file names, version strings
@@ -132,6 +143,12 @@ which makes it a good first test.
 | `abuseipdb` | AbuseIPDB | ipv4, ipv6 | required |
 | `greynoise` (`gn`) | GreyNoise Community | ipv4 | optional |
 | `shodan` | Shodan InternetDB | ipv4 | not needed |
+| `triage` (`tg`) | Triage (tria.ge) sandbox | md5, sha1, sha256 | required |
+| `urlscan` (`us`) | urlscan.io | sha256, ip, domain, url | optional (higher limits) |
+| `pdns` | mnemonic Passive DNS | ip, domain, url | optional (higher limits) |
+| `rdap` (`whois`) | RDAP / WHOIS (rdap.org) | ip, domain, url | not needed |
+| `warninglists` (`wl`) | MISP warninglists (built in) | all | not needed |
+| `dns` | DNS (live, **opt-in**) | ip, domain, url | not needed |
 
 Every provider has a free tier. A single abuse.ch key covers MalwareBazaar, ThreatFox and
 URLhaus. Sources without a key are shown as `SKIPPED`, and the scan still runs.
@@ -154,12 +171,20 @@ Keys take effect immediately, and every source has a "get a key" link.
   "otx": "",
   "abusech": "",
   "greynoise": "",
-  "hybrid_analysis": ""
+  "hybrid_analysis": "",
+  "triage": "",
+  "urlscan": "",
+  "mnemonic": ""
 }
 ```
 
 **Environment variables** override the file: `VT_API_KEY`, `ABUSECH_API_KEY`,
-`ABUSEIPDB_API_KEY`, `OTX_API_KEY`, `HYBRID_API_KEY`, `GREYNOISE_API_KEY`.
+`ABUSEIPDB_API_KEY`, `OTX_API_KEY`, `HYBRID_API_KEY`, `GREYNOISE_API_KEY`, `TRIAGE_API_KEY`,
+`URLSCAN_API_KEY`, `MNEMONIC_API_KEY`.
+
+> **Live DNS is opt-in.** Resolving an attacker's domain through your own resolver can reach the
+> attacker's name server and tip them off, so the `dns` source only runs with `-dns` (CLI) or
+> when you tick its chip (web UI). Passive DNS and RDAP only talk to mnemonic and rdap.org.
 
 Run `zuhan sources` to see which keys are configured.
 
@@ -179,9 +204,9 @@ window is open. Press **Ctrl+C** in that window to stop it.
 
 | Tab | What you can do |
 |---|---|
-| **Scan** | Scan IOCs you paste in, a dump or log (with a preview first), or files you drop in (they are hashed locally). Pick sources, run in offline mode, filter results, add a result to the list with one click, and **download an HTML / JSON / CSV / Markdown report**. |
+| **Scan** | Scan IOCs you paste in, a dump or log (with a preview first), or files you drop in (they are hashed locally). Pick sources, run in offline mode, set the auto-add threshold and the NEW window, filter results (including *New* and *Unknown*), add a result to the list with one click, see the **MITRE ATT&CK** summary, and **download an HTML / JSON / CSV / Markdown report or an ATT&CK Navigator layer**. |
 | **IOC List** | Add IOCs with tags, a note and a verdict, import from a file, filter by type, origin or text, delete one or many, re-scan an entry, and export as TXT / CSV / JSON. |
-| **Sources & API keys** | Enter, replace or delete API keys (they take effect immediately), and see which sources are active and where the files are. |
+| **Sources & API keys** | Enter, replace or delete API keys (they take effect immediately), see which sources are active and where the files are, and update the MISP warninglists. |
 
 ![IOC list](docs/screenshots/ioc-list.png)
 
@@ -218,8 +243,15 @@ zuhan -hash sample.exe                          # hash a file and look it up
 cat iocs.txt | zuhan -o json                    # pipe in, JSON out
 zuhan -s vt,mb,tf <hash>                        # only these sources
 zuhan -x shodan,greynoise <ip>                  # all but these
-zuhan -offline <ioc>                            # local list only, no internet
+zuhan -offline <ioc>                            # local list + warninglists, no internet
+zuhan -dns evil-domain.com                      # also resolve it live (opt-in)
+zuhan -save-min 2 -f iocs.txt                   # auto-add only if 2+ sources agree
+zuhan -f iocs.txt -attack-layer layer.json      # ATT&CK Navigator layer of the techniques found
 ```
+
+After the table ZUHAN prints a short summary to stderr: **NEW** IOCs (first reported within
+`-new-days`, default 7), **UNKNOWN** IOCs, what was added to the local list and what was not
+(on a benign warninglist, or flagged by fewer than `-save-min` sources).
 
 `zuhan <ioc>` is the same as `zuhan scan <ioc>`.
 
@@ -340,6 +372,7 @@ In the web UI, use the **Download report** buttons above the results.
 | `zuhan db add\|rm\|list\|import\|export\|stats\|path` | manage the local IOC list |
 | `zuhan web` | start the local browser UI |
 | `zuhan sources` | sources and API key status |
+| `zuhan warninglists list\|check\|update\|path` | MISP warninglists (`wl` for short) |
 | `zuhan init` | create an empty config file |
 | `zuhan version` | print the version |
 
@@ -360,9 +393,13 @@ Flags may come before or after arguments.
 | `-o format` | stdout format: `table`, `json`, `md`, `csv`, `html` | `table` |
 | `-s list` | only these sources, e.g. `local,vt,mb` | all |
 | `-x list` | exclude these sources | — |
-| `-offline` | local list only | off |
+| `-offline` | local list and warninglists only (no internet) | off |
+| `-dns` | also resolve domains/IPs live (opt-in, see above) | off |
 | `-no-save` | don't add malicious results to the local list | off |
 | `-save-suspicious` | also add suspicious results | off |
+| `-save-min n` | auto-add only when at least `n` sources flag the IOC | `1` |
+| `-new-days n` | mark IOCs first reported within `n` days as NEW (`0` = off) | `7` |
+| `-attack-layer file` | write the ATT&CK techniques found as a Navigator layer | — |
 | `-db file` | use another IOC list file | `~/.config/zuhan/iocdb.json` |
 | `-t duration` | timeout per source | `25s` |
 | `-p n` | IOCs processed in parallel (lower it if you hit rate limits) | `4` |
@@ -411,11 +448,44 @@ suspicious.
 | Local IOC DB | stored verdict; a parent-domain match → suspicious |
 | VirusTotal | 3+ engines → malicious, 2 → suspicious, a single engine → clean with a "likely false positive" note (suspicious if the VT reputation is negative) |
 | AbuseIPDB | confidence ≥ 75 → malicious, ≥ 25 → suspicious |
-| MalwareBazaar / ThreatFox / URLhaus | listed → malicious |
+| MalwareBazaar / ThreatFox / URLhaus | listed → malicious; ThreatFox: if only URLs or ports *on* a domain/IP are listed (not the IOC itself) → suspicious |
 | AlienVault OTX | malware family or 5+ pulses → malicious, 1–4 pulses → suspicious, real allow-lists (whitelist, Alexa, Majestic, known false positive…) → clean |
 | GreyNoise | by classification; RIOT (known benign service) → clean |
 | Hybrid Analysis | sandbox verdict |
 | Shodan InternetDB | informational (ports/CVEs); suspicious only with `c2`/`malware`/`compromised` tags |
+| Triage | sandbox score 8–10 → malicious, 6–7 → suspicious, lower → clean; family, C2s and signatures shown |
+| urlscan.io | any scan urlscan classified malicious → malicious, otherwise informational (scans, hosting IPs, ASN…) |
+| RDAP / WHOIS | informational; a domain registered less than 30 days ago → suspicious ("newly registered") |
+| Passive DNS, DNS | informational (resolutions with first/last seen; NXDOMAIN and private answers are noted) |
+| MISP warninglists | never malicious; see below |
+
+### Warninglists, NEW, UNKNOWN
+
+ZUHAN embeds a snapshot of the [MISP warninglists](https://github.com/MISP/misp-warninglists)
+(about 200 lists; very large "top 1M" and VPN lists are left out). Matching happens locally.
+
+- **KNOWN BENIGN** — an *exact* match on a benign list (public DNS resolvers, private ranges,
+  top sites, known false-positive hashes…). A *suspicious* verdict, or a *malicious* one from a
+  single source, becomes clean (`DOWNGRADED`); two or more sources saying malicious still win.
+  Benign IOCs are never auto-added.
+- **CONTEXT** — cloud/hosting ranges, Tor exit nodes, scanners, URL shorteners, and any match on
+  a parent domain or a URL's host (e.g. `evil.blogspot.com`). Context never changes a verdict.
+- **NEW** — the earliest "first seen" any source reports is within `-new-days` days *and* the
+  verdict is malicious or suspicious.
+- **UNKNOWN** — every intel source that answered had no record of it and no list gave it any
+  context. The local list and the warninglists don't count here.
+
+`zuhan warninglists update` downloads the current lists (lists over 5 MB are skipped; use
+`-max-size 100` or `-all` to include them) to `~/.config/zuhan/warninglists.jsonl.gz`.
+`zuhan wl check 8.8.8.8` shows which lists an IOC is on.
+
+### MITRE ATT&CK
+
+Technique IDs reported by OTX pulses, Hybrid Analysis and Triage signatures are named and
+grouped by tactic using the built-in ATT&CK Enterprise table. Use `-attack-layer layer.json`
+(CLI) or **Download Navigator layer** (web UI) and open the file in the
+[ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/); each technique's score is
+the number of IOCs it was seen with.
 
 > Brand-new samples may not be on VirusTotal yet. The EICAR test file is not real malware, so
 > MalwareBazaar, ThreatFox and URLhaus return `NOT FOUND` for it. Tor exit nodes are flagged

@@ -103,3 +103,29 @@ func TestLegacyMigration(t *testing.T) {
 		t.Fatalf("migrated twice: %s", e)
 	}
 }
+
+func TestWarninglistsCLI(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZUHAN_DB", filepath.Join(dir, "db.json"))
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("ZUHAN_WARNINGLISTS", filepath.Join(dir, "none.jsonl.gz"))
+
+	if code, out, _ := run(t, "", "warninglists", "check", "8.8.8.8", "example-not-listed-zz.xyz"); code != 0 ||
+		!strings.Contains(out, "benign") || !strings.Contains(out, "on no warninglist") {
+		t.Fatalf("check: %d %s", code, out)
+	}
+	if code, out, _ := run(t, "", "wl", "list"); code != 0 || !strings.Contains(out, "KIND") {
+		t.Fatalf("list: %d", code)
+	}
+	// -offline consults the warninglists too
+	if code, out, _ := run(t, "", "-offline", "-no-color", "8.8.8.8"); code != 0 || !strings.Contains(out, "KNOWN BENIGN") || strings.Contains(out, "UNKNOWN") {
+		t.Fatalf("offline scan: %d\n%s", code, out)
+	}
+	if code, _, e := run(t, "", "sources"); code != 0 && e != "" {
+		t.Fatalf("sources: %d %s", code, e)
+	}
+	if code, _, _ := run(t, "", "wl", "bogus"); code != 1 {
+		t.Fatal("unknown wl command should fail")
+	}
+}

@@ -53,6 +53,7 @@ type vtResponse struct {
 			SHA1             string   `json:"sha1"`
 			SHA256           string   `json:"sha256"`
 			LastAnalysisDate int64    `json:"last_analysis_date"`
+			FirstSubmission  int64    `json:"first_submission_date"`
 		} `json:"attributes"`
 	} `json:"data"`
 }
@@ -122,6 +123,13 @@ func (s *VirusTotal) Query(ctx context.Context, i ioc.IOC) Result {
 		st.Malicious, st.Suspicious, st.Harmless, st.Undetected))
 	r.add("Reputation", fmt.Sprint(a.Reputation))
 	r.addList("Tags", a.Tags, 8)
+	if a.FirstSubmission > 0 {
+		fs := time.Unix(a.FirstSubmission, 0).UTC()
+		r.add("First submitted", fs.Format("2006-01-02 15:04 UTC"))
+		if st.Malicious > 0 {
+			r.seen(fs)
+		}
+	}
 	if a.LastAnalysisDate > 0 {
 		r.add("Last analysis", time.Unix(a.LastAnalysisDate, 0).UTC().Format("2006-01-02 15:04 UTC"))
 	}

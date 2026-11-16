@@ -113,3 +113,59 @@ type alwaysBad struct{ fakeIntel }
 func (alwaysBad) Query(context.Context, ioc.IOC) sources.Result {
 	return sources.Result{Status: sources.StatusMalicious}
 }
+
+// fixedIntel returns the same result for every IOC.
+type fixedIntel struct {
+	id string
+	r  sources.Result
+}
+
+func (f fixedIntel) ID() string                                    { return f.id }
+func (f fixedIntel) Name() string                                  { return f.id }
+func (fixedIntel) Supports(ioc.Type) bool                          { return true }
+func (fixedIntel) RequiresKey() bool                               { return false }
+func (fixedIntel) Configured() bool                                { return true }
+func (f fixedIntel) Query(context.Context, ioc.IOC) sources.Result { return f.r }
+
+func TestSaveThresholdAndBenign(t *testing.T) {
+	ctx := context.Background()
+	mal := sources.Result{Status: sources.StatusMalicious}
+
+	sc, st := newScanner(t) // FakeIntel + local list
+	sc.Save.MinSources = 2
+	reps, _, _ := sc.ScanValues(ctx, "evil.com")
+	if reps[0].LocalDB != "skipped_threshold" {
+		t.Fatalf("one source < 2: %q", reps[0].LocalDB)
+	}
+	if _, ok, _ := st.Get(ioc.Domain, "evil.com"); ok {
+		t.Fatal("saved below threshold")
+	}
+	sc.Use(fixedIntel{"second", mal})
+	if reps, _, _ = sc.ScanValues(ctx, "evil.com"); reps[0].LocalDB != "added" {
+		t.Fatalf("two sources: %q", reps[0].LocalDB)
+	}
+
+	sc2, st2 := newScanner(t)
+	sc2.Use(fixedIntel{"allow", sources.Result{Status: sources.StatusInfo, Benign: "IPv4 public DNS resolvers"}})
+	reps, _, _ = sc2.ScanValues(ctx, "evil.com")
+	if reps[0].LocalDB != "skipped_benign" || len(reps[0].Benign) != 1 {
+		t.Fatalf("benign: %+v", reps[0])
+	}
+	if _, ok, _ := st2.Get(ioc.Domain, "evil.com"); ok {
+		t.Fatal("benign IOC saved")
+	}
+}
+
+func TestSelectOptIn(t *testing.T) {
+	sc := &zuhan.Scanner{}
+	sc.Use(fakeIntel{}, &sources.DNS{})
+	if got := sc.Select(nil, nil); len(got) != 1 || got[0].ID() != "fake" {
+		t.Fatalf("default selection must skip opt-in DNS: %v", got)
+	}
+	if got := sc.Select([]string{"dns"}, nil); len(got) != 1 || got[0].ID() != "dns" {
+		t.Fatalf("explicit dns: %v", got)
+	}
+	if got := sc.Select(nil, []string{"fake"}); len(got) != 0 {
+		t.Fatalf("exclude: %v", got)
+	}
+}

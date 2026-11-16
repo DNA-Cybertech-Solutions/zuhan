@@ -17,7 +17,7 @@ import (
 
 // version is overridden at build time with
 // -ldflags "-X main.version=v3.0.0" (see Makefile).
-var version = "3.0.0"
+var version = "3.1.1"
 
 // Exit codes: 0 = nothing malicious, 1 = usage/runtime error,
 // 2 = at least one IOC malicious, 3 = at least one suspicious (none malicious).
@@ -60,6 +60,8 @@ func (c *cli) run(argv []string) int {
 			return c.db(rest)
 		case "web", "ui", "gui":
 			return c.web(rest)
+		case "warninglists", "warninglist", "wl":
+			return c.warninglists(rest)
 		case "sources":
 			return c.scan(append([]string{"-list"}, rest...))
 		case "init":
@@ -89,6 +91,7 @@ Commands:
   zuhan db export [file]             export the list (txt/json/csv)
   zuhan db stats                     list statistics
   zuhan web                          open the browser UI (this computer only)
+  zuhan warninglists list|check|update   MISP warninglists (known-benign / context)
   zuhan sources                      sources and API key status
   zuhan init                         create an empty config file
   zuhan version

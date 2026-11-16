@@ -36,6 +36,33 @@ type haReport struct {
 	Environment flexStr `json:"environment_description"`
 	StartTime   flexStr `json:"analysis_start_time"`
 	SHA256      flexStr `json:"sha256"`
+	JobID       flexStr `json:"job_id"`
+	EnvID       flexStr `json:"environment_id"`
+}
+
+// attackFromReport pulls the MITRE ATT&CK mapping of one sandbox report.
+// Errors are ignored: the mapping is a bonus on top of the verdict.
+func (s *HybridAnalysis) attackFromReport(ctx context.Context, base string, headers map[string]string, rep haReport, r *Result) {
+	id := rep.JobID.String()
+	if id == "" && rep.SHA256 != "" && rep.EnvID != "" {
+		id = rep.SHA256.String() + ":" + rep.EnvID.String()
+	}
+	if id == "" {
+		return
+	}
+	var sum struct {
+		Mitre []struct {
+			Tactic    string `json:"tactic"`
+			Technique string `json:"technique"`
+			ID        string `json:"attck_id"`
+		} `json:"mitre_attcks"`
+	}
+	if _, err := getJSON(ctx, base+"/report/"+url.PathEscape(id)+"/summary", headers, &sum); err != nil {
+		return
+	}
+	for _, m := range sum.Mitre {
+		r.technique(m.ID, m.Technique)
+	}
 }
 
 func (s *HybridAnalysis) Query(ctx context.Context, i ioc.IOC) Result {
@@ -107,6 +134,19 @@ func (s *HybridAnalysis) Query(ctx context.Context, i ioc.IOC) Result {
 		r.Score = fmt.Sprintf("%d/100", best)
 	}
 	r.Link = "https://www.hybrid-analysis.com/sample/" + sha
+	if r.Status == StatusMalicious || r.Status == StatusSuspicious {
+		for _, rep := range reports {
+			if v := strings.ToLower(rep.Verdict.String()); v == "malicious" || v == "suspicious" {
+				r.seenString(rep.StartTime.String())
+			}
+		}
+		for _, rep := range reports {
+			if v := strings.ToLower(rep.Verdict.String()); v == "malicious" || v == "suspicious" {
+				s.attackFromReport(ctx, base, headers, rep, &r)
+				break
+			}
+		}
+	}
 	r.add("Reports", fmt.Sprint(len(reports)))
 	r.add("Verdict", reports[0].Verdict.String())
 	r.addList("Family", fams, 5)

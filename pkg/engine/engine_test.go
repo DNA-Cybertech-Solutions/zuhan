@@ -81,3 +81,89 @@ func TestVerdictAllErrors(t *testing.T) {
 		t.Fatalf("got %v", v)
 	}
 }
+
+func TestAnalyze(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	recent, old := now.Add(-48*time.Hour), now.AddDate(-1, 0, 0)
+	opt := engine.Options{Now: func() time.Time { return now }}
+	an := func(rs ...sources.Result) engine.Report {
+		rep := engine.Report{Results: rs}
+		engine.Analyze(&rep, opt)
+		return rep
+	}
+
+	rep := an(sources.Result{Source: "A", Status: sources.StatusMalicious, FirstSeen: &old,
+		Techniques: []sources.Technique{{ID: "T1105"}}},
+		sources.Result{Source: "B", Status: sources.StatusMalicious, FirstSeen: &recent,
+			Techniques: []sources.Technique{{ID: "T1105"}, {ID: "T1059.001"}}})
+	if rep.New || !rep.FirstSeen.Equal(old) {
+		t.Fatalf("earliest first seen wins: new=%v first=%v", rep.New, rep.FirstSeen)
+	}
+	if len(rep.Attack) != 2 {
+		t.Fatalf("attack %+v", rep.Attack)
+	}
+	for _, h := range rep.Attack {
+		if h.ID == "T1105" && len(h.Sources) != 2 {
+			t.Fatalf("sources merged: %+v", h)
+		}
+	}
+
+	if rep = an(sources.Result{Status: sources.StatusMalicious, FirstSeen: &recent}); !rep.New {
+		t.Fatal("recent malicious should be NEW")
+	}
+	if rep = an(sources.Result{Status: sources.StatusInfo, FirstSeen: &recent}); rep.New {
+		t.Fatal("NEW needs a malicious/suspicious verdict")
+	}
+	if rep := (func() engine.Report {
+		r := engine.Report{Results: []sources.Result{{Status: sources.StatusMalicious, FirstSeen: &recent}}}
+		engine.Analyze(&r, engine.Options{Now: opt.Now, NewDays: -1})
+		return r
+	})(); rep.New {
+		t.Fatal("NewDays<0 disables NEW")
+	}
+
+	rep = an(sources.Result{Status: sources.StatusSuspicious}, sources.Result{Status: sources.StatusInfo, Benign: "public DNS"})
+	if rep.Verdict != sources.StatusClean || !rep.Downgraded {
+		t.Fatalf("suspicious+benign → clean: %+v", rep)
+	}
+	rep = an(sources.Result{Status: sources.StatusMalicious}, sources.Result{Status: sources.StatusInfo, Benign: "public DNS"})
+	if rep.Verdict != sources.StatusClean || !rep.Downgraded {
+		t.Fatal("a single malicious source on an allow-listed IOC is a false positive")
+	}
+	rep = an(sources.Result{Status: sources.StatusMalicious}, sources.Result{Status: sources.StatusMalicious},
+		sources.Result{Status: sources.StatusInfo, Benign: "public DNS"})
+	if rep.Verdict != sources.StatusMalicious || rep.Downgraded {
+		t.Fatal("two malicious sources win over an allow-list")
+	}
+
+	rep = an(sources.Result{Status: sources.StatusNotFound}, sources.Result{Status: sources.StatusNotFound, LocalOnly: true})
+	if !rep.Unknown {
+		t.Fatal("not found everywhere → unknown")
+	}
+	if rep = an(sources.Result{Status: sources.StatusNotFound, LocalOnly: true}); rep.Unknown {
+		t.Fatal("local-only misses alone are not 'unknown'")
+	}
+	if rep = an(sources.Result{Status: sources.StatusNotFound}, sources.Result{Status: sources.StatusInfo, Context: "Tor exit node"}); rep.Unknown {
+		t.Fatal("context means it is known")
+	}
+	if rep = an(sources.Result{Status: sources.StatusNotFound}, sources.Result{Status: sources.StatusError}); !rep.Unknown {
+		t.Fatal("errors do not prevent unknown")
+	}
+
+	var buf bytes.Buffer
+	reps := []engine.Report{an(sources.Result{Source: "A", Status: sources.StatusMalicious, FirstSeen: &recent,
+		Techniques: []sources.Technique{{ID: "T1059.001"}}})}
+	reps[0].IOC = ioc.Parse("evil.com")
+	for _, f := range []string{"table", "md", "html", "csv", "json"} {
+		buf.Reset()
+		if err := report.Write(&buf, f, reps, report.Options{Generated: now}); err != nil {
+			t.Fatal(f, err)
+		}
+		if !strings.Contains(buf.String(), "T1059.001") {
+			t.Fatalf("%s report lacks ATT&CK: %s", f, buf.String())
+		}
+		if f != "json" && f != "csv" && !strings.Contains(buf.String(), "NEW") {
+			t.Fatalf("%s report lacks NEW", f)
+		}
+	}
+}

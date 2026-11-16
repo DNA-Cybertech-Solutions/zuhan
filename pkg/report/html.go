@@ -3,15 +3,22 @@ package report
 import (
 	"html/template"
 	"io"
+	"strings"
+	"time"
 
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/attack"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
 )
 
 var htmlTmpl = template.Must(template.New("r").Funcs(template.FuncMap{
-	"cls":     func(s sources.Status) string { return s.String() },
-	"label":   func(s sources.Status) string { return s.Label() },
-	"localdb": localDBText,
+	"cls":       func(s sources.Status) string { return s.String() },
+	"label":     func(s sources.Status) string { return s.Label() },
+	"localdb":   localDBText,
+	"notes":     func(rep engine.Report, now time.Time) []Note { return Notes(rep, now) },
+	"tacticsOf": func(h attack.Hit) string { return strings.Join(h.Tactics, ", ") },
+	"atturl":    attack.URL,
+	"join":      strings.Join,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -46,6 +53,14 @@ a{color:var(--inf)}details{margin-top:4px}summary{cursor:pointer;color:var(--mut
 dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;margin:6px 0 0;font-size:12px}
 dt{color:var(--mut)}dd{margin:0;word-break:break-word}
 .tablewrap{overflow-x:auto}
+.notes{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px;font-size:13px}
+.note{display:flex;gap:8px;align-items:baseline}.note .badge{min-width:96px;text-align:center}
+.new{color:var(--mal)}.unknown{color:var(--sus)}.benign,.downgraded{color:var(--cln)}.context{color:var(--inf)}.first_seen{color:var(--nf)}
+.attack{color:var(--err)}.tech a{font-family:ui-monospace,Menlo,Consolas,monospace}
+.att{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:22px}
+.att h2{font-size:15px;margin:0 0 8px}.att .row{display:grid;grid-template-columns:170px 1fr;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}
+.att .row b{color:var(--mut);font-weight:600}
+@media (max-width:600px){.att .row{grid-template-columns:1fr}}
 footer{color:var(--mut);font-size:12px;margin-top:30px}
 </style>
 </head>
@@ -59,6 +74,9 @@ footer{color:var(--mut);font-size:12px;margin-top:30px}
 <div class="stat clean"><b>{{.Stats.Clean}}</b><span>Clean</span></div>
 <div class="stat not_found"><b>{{.Stats.NotFound}}</b><span>Not found</span></div>
 </div>
+{{with .Attack}}<section class="att"><h2>MITRE ATT&amp;CK — {{len .}} technique(s)</h2>
+{{range $.ByTactic}}<div class="row"><b>{{.Tactic}}</b><div>{{range .Hits}}<div class="tech"><a href="{{atturl .ID}}" target="_blank" rel="noopener noreferrer">{{.ID}}</a> {{.Name}} <span class="meta">— {{join .IOCs ", "}}</span></div>{{end}}</div></div>{{end}}
+</section>{{end}}
 {{range .Reports}}
 <section class="card">
 <div class="head">
@@ -66,6 +84,10 @@ footer{color:var(--mut);font-size:12px;margin-top:30px}
 <div class="meta">{{.IOC.Type}}{{if ne .IOC.Raw .IOC.Value}} · input: {{.IOC.Raw}}{{end}}{{range $k, $v := .IOC.Meta}} · {{$k}}: {{$v}}{{end}}</div></div>
 <div><span class="badge big {{cls .Verdict}}">{{label .Verdict}}</span> <span class="meta">{{.Flagged}}/{{.Queried}} sources flagged</span>{{if .LocalDB}}<div class="meta info">{{localdb .LocalDB}}</div>{{end}}</div>
 </div>
+{{$n := notes . $.Generated}}{{if or $n .Attack}}<div class="notes">
+{{range $n}}<div class="note"><span class="badge {{.Kind}}">{{.Tag}}</span><span>{{.Text}}</span></div>{{end}}
+{{range .Attack}}<div class="note"><span class="badge attack">ATT&amp;CK</span><span class="tech"><a href="{{atturl .ID}}" target="_blank" rel="noopener noreferrer">{{.ID}}</a> {{.Name}}{{with tacticsOf .}} <span class="meta">({{.}})</span>{{end}} <span class="meta">← {{join .Sources ", "}}</span></span></div>{{end}}
+</div>{{end}}
 <div class="tablewrap"><table>
 <thead><tr><th>Source</th><th>Status</th><th>Score</th><th>Details</th></tr></thead>
 <tbody>
@@ -87,9 +109,12 @@ footer{color:var(--mut);font-size:12px;margin-top:30px}
 `))
 
 func writeHTML(w io.Writer, reps []engine.Report, opt Options) error {
+	hits := Techniques(reps)
 	return htmlTmpl.Execute(w, map[string]any{
 		"Reports":   reps,
 		"Stats":     Summarize(reps),
+		"Attack":    hits,
+		"ByTactic":  attack.ByTactic(hits),
 		"Generated": opt.Generated,
 		"Version":   opt.Version,
 	})

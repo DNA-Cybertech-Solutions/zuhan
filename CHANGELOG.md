@@ -1,5 +1,40 @@
 # Changelog
 
+## 3.1.1
+
+- urlscan.io: URL lookups no longer fail when urlscan returns HTTP 502 for a URL search. Other
+  spellings of the query are tried, then the URL's host (marked "host only"; a malicious
+  verdict there counts as suspicious).
+- ThreatFox: a domain or IP search also returns URLs and ports *on* that host. If only those
+  are listed, the result is now suspicious with a "related IOCs" note instead of malicious, and
+  their dates no longer trigger NEW (google.com was reported malicious because of abused URLs).
+- Allow-listed IOCs (KNOWN BENIGN): a malicious verdict from a single source is now lowered to
+  clean as well; two or more sources saying malicious still win.
+- ThreatFox summary is shorter (at most 3 malware names and threat types).
+- HTTP errors are readable: an HTML error page is no longer dumped into the result, and JSON
+  error messages are shown as text.
+
+## 3.1.0
+
+- **New sources:** Triage (tria.ge sandbox: score, family, extracted C2s, signatures),
+  urlscan.io, mnemonic passive DNS, RDAP/WHOIS (registrar, dates, network owner; domains
+  registered less than 30 days ago are suspicious) and live DNS resolution (opt-in with `-dns`,
+  because the lookup can reach the attacker's name server).
+- **MISP warninglists** built in: known-benign IOCs are marked KNOWN BENIGN, a suspicious
+  verdict on them becomes clean, and they are never auto-added; cloud, Tor, scanner and
+  shared-hosting matches get a CONTEXT label. `zuhan warninglists list|check|update|path`.
+- **NEW** flag for malicious/suspicious IOCs first reported within `-new-days` (default 7).
+- **UNKNOWN** flag for IOCs no intel source has seen.
+- **Auto-add threshold:** `-save-min n` (web UI: "when flagged by ≥ n sources").
+- **ThreatFox** results now show malware, aliases, Malpedia, threat and IOC type, confidence,
+  first/last seen, reporter, reference and tags. Several sources report "first seen".
+- **MITRE ATT&CK:** techniques from OTX, Hybrid Analysis and Triage are named, grouped by tactic
+  per IOC and per scan, shown in every report format and the web UI, and exportable as an ATT&CK
+  Navigator layer (`-attack-layer`, or the web UI button). ATT&CK Enterprise 20.1 is built in.
+- `-offline` now checks the warninglists as well as the local list.
+- Reports (table, HTML, Markdown, CSV, JSON) include the new flags, labels and techniques.
+- Added `NOTICE` with MITRE ATT&CK and MISP warninglists attribution.
+
 ## 3.0.0
 
 - **Renamed to ZUHAN.** The command is now `zuhan`, the Go module is

@@ -20,6 +20,9 @@ type File struct {
 	AbuseCH        string `json:"abusech"`
 	GreyNoise      string `json:"greynoise"`
 	HybridAnalysis string `json:"hybrid_analysis"`
+	Triage         string `json:"triage"`
+	URLScan        string `json:"urlscan"`
+	Mnemonic       string `json:"mnemonic"`
 }
 
 // EnvVars maps each key to the environment variable that overrides it.
@@ -30,6 +33,9 @@ var EnvVars = map[string]string{
 	"abusech":       "ABUSECH_API_KEY",
 	"greynoise":     "GREYNOISE_API_KEY",
 	"hybrid":        "HYBRID_API_KEY",
+	"triage":        "TRIAGE_API_KEY",
+	"urlscan":       "URLSCAN_API_KEY",
+	"pdns":          "MNEMONIC_API_KEY",
 	"malwarebazaar": "ABUSECH_API_KEY",
 	"threatfox":     "ABUSECH_API_KEY",
 	"urlhaus":       "ABUSECH_API_KEY",
@@ -92,6 +98,15 @@ func DefaultDBPath() string {
 	return filepath.Join(filepath.Dir(DefaultPath()), "iocdb.json")
 }
 
+// WarninglistPath is where `zuhan warninglists update` stores the
+// downloaded MISP warninglists (ZUHAN_WARNINGLISTS overrides it).
+func WarninglistPath() string {
+	if v := os.Getenv("ZUHAN_WARNINGLISTS"); v != "" {
+		return v
+	}
+	return filepath.Join(filepath.Dir(DefaultPath()), "warninglists.jsonl.gz")
+}
+
 // DBPath resolves the IOC list location:
 // explicit flag > ZUHAN_DB > IOCSCAN_DB (legacy) > default.
 func DBPath(flagValue string) string {
@@ -123,6 +138,9 @@ var KeyFields = []KeyField{
 	{"otx", "AlienVault OTX", "OTX_API_KEY", "https://otx.alienvault.com/settings", "optional — works without a key, with lower limits"},
 	{"hybrid_analysis", "Hybrid Analysis", "HYBRID_API_KEY", "https://www.hybrid-analysis.com/my-account?tab=%23api-key-tab", ""},
 	{"greynoise", "GreyNoise", "GREYNOISE_API_KEY", "https://viz.greynoise.io/account/api-key", "optional — works without a key"},
+	{"triage", "Triage (tria.ge)", "TRIAGE_API_KEY", "https://tria.ge/account", "sandbox reports for hashes"},
+	{"urlscan", "urlscan.io", "URLSCAN_API_KEY", "https://urlscan.io/user/profile/", "optional — works without a key, with lower limits"},
+	{"mnemonic", "mnemonic Passive DNS", "MNEMONIC_API_KEY", "https://www.mnemonic.io/resources/passive-dns/", "optional — works without a key, with lower limits"},
 }
 
 // Get returns the stored value of a key field.
@@ -140,6 +158,12 @@ func (f File) Get(id string) string {
 		return f.GreyNoise
 	case "hybrid_analysis":
 		return f.HybridAnalysis
+	case "triage":
+		return f.Triage
+	case "urlscan":
+		return f.URLScan
+	case "mnemonic":
+		return f.Mnemonic
 	}
 	return ""
 }
@@ -159,6 +183,12 @@ func (f *File) Set(id, v string) bool {
 		f.GreyNoise = v
 	case "hybrid_analysis":
 		f.HybridAnalysis = v
+	case "triage":
+		f.Triage = v
+	case "urlscan":
+		f.URLScan = v
+	case "mnemonic":
+		f.Mnemonic = v
 	default:
 		return false
 	}
@@ -229,6 +259,9 @@ func Keys(f File) sources.Keys {
 		AbuseCH:        env("ABUSECH_API_KEY", f.AbuseCH),
 		GreyNoise:      env("GREYNOISE_API_KEY", f.GreyNoise),
 		HybridAnalysis: env("HYBRID_API_KEY", f.HybridAnalysis),
+		Triage:         env("TRIAGE_API_KEY", f.Triage),
+		URLScan:        env("URLSCAN_API_KEY", f.URLScan),
+		Mnemonic:       env("MNEMONIC_API_KEY", f.Mnemonic),
 	}
 }
 

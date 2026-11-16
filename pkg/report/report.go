@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/attack"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
 )
@@ -159,6 +160,12 @@ func writeTable(w io.Writer, reps []engine.Report, opt Options) error {
 		if rep.LocalDB != "" {
 			fmt.Fprintf(w, " %s %s\n", "Local DB:", c(cCyan, localDBText(rep.LocalDB)))
 		}
+		for _, n := range Notes(rep, opt.Generated) {
+			fmt.Fprintf(w, " %s %s\n", c(noteColor(n.Kind), pad(n.Tag, 13)), n.Text)
+		}
+		for _, h := range rep.Attack {
+			fmt.Fprintf(w, " %s %s %s\n", c(cMag, pad("ATT&CK", 13)), attack.Describe(h), c(cGray, "← "+strings.Join(h.Sources, ", ")))
+		}
 		fmt.Fprintln(w, c(cDim, line))
 		if len(rep.Results) == 0 {
 			fmt.Fprintln(w, "  no source supports this IOC type")
@@ -192,8 +199,25 @@ func writeTable(w io.Writer, reps []engine.Report, opt Options) error {
 			c(statusColor(sources.StatusSuspicious), fmt.Sprintf("%d suspicious", s.Suspicious)),
 			c(statusColor(sources.StatusClean), fmt.Sprintf("%d clean", s.Clean)),
 			c(cGray, fmt.Sprintf("%d not found", s.NotFound)))
+		if hits := Techniques(reps); len(hits) > 0 && len(reps) > 1 {
+			fmt.Fprintf(w, " ATT&CK : %d technique(s) — %s\n", len(hits), techIDs(hits))
+		}
 	}
 	return nil
+}
+
+func noteColor(kind string) string {
+	switch kind {
+	case "new":
+		return cBold + cRed
+	case "unknown":
+		return cBold + cYellow
+	case "benign", "downgraded":
+		return cGreen
+	case "context":
+		return cCyan
+	}
+	return cGray
 }
 
 func truncRunes(s string, n int) string {
@@ -212,8 +236,9 @@ func writeJSON(w io.Writer, reps []engine.Report, opt Options) error {
 		Version   string          `json:"version,omitempty"`
 		Generated time.Time       `json:"generated"`
 		Summary   Stats           `json:"summary"`
+		Attack    []attack.Hit    `json:"attack,omitempty"`
 		Reports   []engine.Report `json:"reports"`
-	}{"zuhan", opt.Version, opt.Generated.UTC(), Summarize(reps), reps}
+	}{"zuhan", opt.Version, opt.Generated.UTC(), Summarize(reps), Techniques(reps), reps}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
@@ -224,15 +249,30 @@ func writeJSON(w io.Writer, reps []engine.Report, opt Options) error {
 
 func writeCSV(w io.Writer, reps []engine.Report) error {
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"ioc", "type", "verdict", "source", "status", "score", "summary", "details", "link", "error", "local_db"})
+	_ = cw.Write([]string{"ioc", "type", "verdict", "source", "status", "score", "summary", "details", "link", "error", "local_db",
+		"first_seen", "flags", "benign", "context", "attack"})
 	for _, rep := range reps {
+		first := ""
+		if rep.FirstSeen != nil {
+			first = rep.FirstSeen.UTC().Format(time.RFC3339)
+		}
+		var flags []string
+		for _, f := range []struct {
+			on   bool
+			name string
+		}{{rep.New, "new"}, {rep.Unknown, "unknown"}, {rep.Downgraded, "downgraded"}} {
+			if f.on {
+				flags = append(flags, f.name)
+			}
+		}
+		extra := []string{first, strings.Join(flags, " "), strings.Join(rep.Benign, "; "), strings.Join(rep.Context, "; "), techIDs(rep.Attack)}
 		for _, r := range rep.Results {
 			var det []string
 			for _, f := range r.Fields {
 				det = append(det, f.Key+"="+f.Value)
 			}
-			if err := cw.Write([]string{rep.IOC.Value, string(rep.IOC.Type), rep.Verdict.String(),
-				r.Source, r.Status.String(), r.Score, r.Summary, strings.Join(det, "; "), r.Link, r.Error, rep.LocalDB}); err != nil {
+			if err := cw.Write(append([]string{rep.IOC.Value, string(rep.IOC.Type), rep.Verdict.String(),
+				r.Source, r.Status.String(), r.Score, r.Summary, strings.Join(det, "; "), r.Link, r.Error, rep.LocalDB}, extra...)); err != nil {
 				return err
 			}
 		}
@@ -254,11 +294,27 @@ func writeMarkdown(w io.Writer, reps []engine.Report, opt Options) error {
 	fmt.Fprintf(w, "_Generated %s by ZUHAN %s_\n\n", opt.Generated.Format("2006-01-02 15:04:05 MST"), opt.Version)
 	fmt.Fprintf(w, "**%d IOC(s)** — %d malicious · %d suspicious · %d clean · %d not found\n\n",
 		s.Total, s.Malicious, s.Suspicious, s.Clean, s.NotFound)
-	fmt.Fprintln(w, "| IOC | Type | Verdict | Flagged |")
-	fmt.Fprintln(w, "|---|---|---|---|")
+	fmt.Fprintln(w, "| IOC | Type | Verdict | Flagged | Notes |")
+	fmt.Fprintln(w, "|---|---|---|---|---|")
 	for _, rep := range reps {
-		fmt.Fprintf(w, "| `%s` | %s | **%s** | %d/%d |\n", mdEsc(rep.IOC.Value), rep.IOC.Type,
-			rep.Verdict.Label(), rep.Flagged, rep.Queried)
+		var tags []string
+		for _, n := range Notes(rep, opt.Generated) {
+			if n.Kind != "context" && n.Kind != "first_seen" {
+				tags = append(tags, n.Tag)
+			}
+		}
+		fmt.Fprintf(w, "| `%s` | %s | **%s** | %d/%d | %s |\n", mdEsc(rep.IOC.Value), rep.IOC.Type,
+			rep.Verdict.Label(), rep.Flagged, rep.Queried, strings.Join(tags, ", "))
+	}
+	if hits := Techniques(reps); len(hits) > 0 {
+		fmt.Fprintf(w, "\n## MITRE ATT&CK (%d techniques)\n\n", len(hits))
+		for _, g := range attack.ByTactic(hits) {
+			var ts []string
+			for _, h := range g.Hits {
+				ts = append(ts, fmt.Sprintf("[%s](%s) %s", h.ID, attack.URL(h.ID), mdEsc(h.Name)))
+			}
+			fmt.Fprintf(w, "- **%s:** %s\n", g.Tactic, strings.Join(ts, " · "))
+		}
 	}
 	for _, rep := range reps {
 		fmt.Fprintf(w, "\n## `%s`\n\n", mdEsc(rep.IOC.Value))
@@ -266,6 +322,16 @@ func writeMarkdown(w io.Writer, reps []engine.Report, opt Options) error {
 			rep.IOC.Type, rep.Verdict.Label(), rep.Flagged, rep.Queried)
 		if rep.LocalDB != "" {
 			fmt.Fprintf(w, "- **Local DB:** %s\n", localDBText(rep.LocalDB))
+		}
+		for _, n := range Notes(rep, opt.Generated) {
+			fmt.Fprintf(w, "- **%s:** %s\n", n.Tag, mdEsc(n.Text))
+		}
+		if len(rep.Attack) > 0 {
+			var ts []string
+			for _, h := range rep.Attack {
+				ts = append(ts, fmt.Sprintf("[%s](%s) %s", h.ID, attack.URL(h.ID), mdEsc(h.Name)))
+			}
+			fmt.Fprintf(w, "- **ATT&CK:** %s\n", strings.Join(ts, " · "))
 		}
 		for _, k := range []string{"file", "md5", "sha1", "sha256", "size"} {
 			if v, ok := rep.IOC.Meta[k]; ok {
@@ -307,6 +373,10 @@ func localDBText(s string) string {
 		return "updated in local IOC list"
 	case "matched":
 		return "already in local IOC list"
+	case "skipped_benign":
+		return "not added: on a benign allow-list"
+	case "skipped_threshold":
+		return "not added: flagged by too few sources"
 	}
 	return s
 }

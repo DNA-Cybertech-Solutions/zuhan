@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DNA-Cybertech-Solutions/zuhan"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/attack"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/config"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/extract"
@@ -36,6 +37,12 @@ var aliases = map[string]string{
 	"abuseipdb": "abuseipdb", "aipdb": "abuseipdb",
 	"gn": "greynoise", "greynoise": "greynoise",
 	"shodan": "shodan", "internetdb": "shodan",
+	"triage": "triage", "tg": "triage", "triagege": "triage",
+	"urlscan": "urlscan", "us": "urlscan", "urlscanio": "urlscan",
+	"pdns": "pdns", "passivedns": "pdns", "mnemonic": "pdns",
+	"rdap": "rdap", "whois": "rdap",
+	"dns": "dns",
+	"wl":  "warninglists", "warninglists": "warninglists", "warninglist": "warninglists", "misp": "warninglists",
 }
 
 func (c *cli) scan(argv []string) int {
@@ -47,11 +54,15 @@ func (c *cli) scan(argv []string) int {
 		keepPriv = fs.Bool("keep-private", false, "keep private/local IPs from dumps (192.168.x, 10.x, 127.x …)")
 		outFmt   = fs.String("o", "table", "stdout format: table|json|md|csv|html")
 		repPath  = fs.String("r", "", "write a report file (format from extension: .html .json .md .csv .txt)")
-		srcList  = fs.String("s", "", "only these sources (comma separated): local,vt,mb,tf,uh,otx,ha,abuseipdb,gn,shodan")
+		srcList  = fs.String("s", "", "only these sources (comma separated): local,wl,vt,mb,tf,uh,otx,ha,abuseipdb,gn,shodan,triage,urlscan,pdns,rdap,dns")
 		exclude  = fs.String("x", "", "exclude these sources (comma separated)")
-		offline  = fs.Bool("offline", false, "check the local IOC list only (no internet)")
+		offline  = fs.Bool("offline", false, "check only local data: the IOC list and warninglists (no internet)")
 		noSave   = fs.Bool("no-save", false, "do NOT add malicious IOCs to the local list")
 		saveSus  = fs.Bool("save-suspicious", false, "also add suspicious IOCs to the local list")
+		saveMin  = fs.Int("save-min", 1, "only auto-add IOCs flagged by at least this many sources")
+		newDays  = fs.Int("new-days", 7, "flag malicious IOCs first reported within this many days as NEW (0 = off)")
+		withDNS  = fs.Bool("dns", false, "also resolve domains/IPs live through your DNS resolver (opt-in: the attacker's name server can see the lookup)")
+		layer    = fs.String("attack-layer", "", "write the ATT&CK techniques found as an ATT&CK Navigator layer (JSON)")
 		dbPath   = fs.String("db", "", "local IOC list file (default: "+config.DefaultDBPath()+")")
 		timeout  = fs.Duration("t", 25*time.Second, "timeout per source")
 		cfgPath  = fs.String("c", "", "config file (default: "+config.DefaultPath()+")")
@@ -96,13 +107,13 @@ func (c *cli) scan(argv []string) int {
 	}
 	sc := zuhan.New(keys, st)
 	if *offline {
-		*srcList = "localdb"
+		*srcList = "localdb,warninglists"
 	}
-	if sc.Sources, err = selectSources(sc.Sources, *srcList, *exclude); err != nil {
+	if sc.Sources, err = selectSources(sc, *srcList, *exclude, *withDNS); err != nil {
 		return c.errf("%v", err)
 	}
 	if *listSrc {
-		listSources(c.stdout, sc.Sources, usedCfg, st)
+		listSources(c.stdout, sc.Available, usedCfg, st)
 		return exitOK
 	}
 
@@ -199,11 +210,15 @@ func (c *cli) scan(argv []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	showProgress := !*quiet && len(iocs) > 1 && isTerminal(c.stderr)
-	sc.Engine = engine.Options{Timeout: *timeout, Parallel: *parallel}
+	nd := *newDays
+	if nd == 0 {
+		nd = -1
+	}
+	sc.Engine = engine.Options{Timeout: *timeout, Parallel: *parallel, NewDays: nd}
 	if showProgress {
 		sc.Engine.Progress = func(done, total int) { fmt.Fprintf(c.stderr, "\r  scanning… %d/%d", done, total) }
 	}
-	sc.Save = zuhan.SavePolicy{Enabled: !*noSave && !*offline, IncludeSuspicious: *saveSus}
+	sc.Save = zuhan.SavePolicy{Enabled: !*noSave && !*offline, IncludeSuspicious: *saveSus, MinSources: *saveMin}
 	reps, serr := sc.Scan(ctx, iocs)
 	if showProgress {
 		fmt.Fprint(c.stderr, "\r\033[K")
@@ -223,14 +238,24 @@ func (c *cli) scan(argv []string) int {
 		if err := report.Write(c.stdout, *outFmt, reps, ropt); err != nil {
 			return c.errf("%v", err)
 		}
-		added := 0
+		c.scanNotes(reps, st.Path(), *saveMin)
+	}
+	if *layer != "" {
+		var col attack.Collector
 		for _, r := range reps {
-			if r.LocalDB == "added" {
-				added++
-			}
+			col.AddHits(r.Attack, r.IOC.Value)
 		}
-		if added > 0 {
-			fmt.Fprintf(c.stderr, "%d new malicious IOC(s) added to the local list (%s)\n", added, st.Path())
+		hits := col.Hits()
+		b, err := attack.Layer("ZUHAN scan "+time.Now().Format("2006-01-02 15:04"),
+			fmt.Sprintf("Techniques reported for %d IOC(s) by ZUHAN %s", len(reps), version), hits)
+		if err == nil {
+			err = os.WriteFile(*layer, append(b, '\n'), 0o644)
+		}
+		if err != nil {
+			return c.errf("could not write the ATT&CK layer: %v", err)
+		}
+		if !*quiet {
+			fmt.Fprintf(c.stderr, "ATT&CK Navigator layer (%d techniques) saved: %s — open it at https://mitre-attack.github.io/attack-navigator/\n", len(hits), *layer)
 		}
 	}
 	if *repPath != "" {
@@ -246,7 +271,7 @@ func (c *cli) scan(argv []string) int {
 			return c.errf("could not write the report: %v", errors.Join(werr, cerr))
 		}
 		if !*quiet {
-			fmt.Fprintln(c.stderr, "rapor kaydedildi:", *repPath)
+			fmt.Fprintln(c.stderr, "report saved:", *repPath)
 		}
 	}
 
@@ -299,7 +324,7 @@ func parseIDs(list string) (map[string]bool, error) {
 	return out, nil
 }
 
-func selectSources(all []sources.Source, only, exclude string) ([]sources.Source, error) {
+func selectSources(sc *zuhan.Scanner, only, exclude string, withDNS bool) ([]sources.Source, error) {
 	inc, err := parseIDs(only)
 	if err != nil {
 		return nil, err
@@ -308,10 +333,19 @@ func selectSources(all []sources.Source, only, exclude string) ([]sources.Source
 	if err != nil {
 		return nil, err
 	}
-	var out []sources.Source
-	for _, s := range all {
-		if (len(inc) == 0 || inc[s.ID()]) && !exc[s.ID()] {
-			out = append(out, s)
+	var ids, xs []string
+	for id := range inc {
+		ids = append(ids, id)
+	}
+	for id := range exc {
+		xs = append(xs, id)
+	}
+	out := sc.Select(ids, xs)
+	if withDNS && len(ids) == 0 && !exc["dns"] {
+		for _, src := range sc.Available {
+			if src.ID() == "dns" {
+				out = append(out, src)
+			}
 		}
 	}
 	if len(out) == 0 {
@@ -320,9 +354,47 @@ func selectSources(all []sources.Source, only, exclude string) ([]sources.Source
 	return out, nil
 }
 
+// scanNotes prints the after-scan highlights: new IOCs, IOCs nobody knows,
+// and what happened with the local list.
+func (c *cli) scanNotes(reps []engine.Report, dbPath string, saveMin int) {
+	var added, fresh, unknown, benign, below []string
+	now := time.Now()
+	for _, r := range reps {
+		switch r.LocalDB {
+		case "added":
+			added = append(added, r.IOC.Value)
+		case "skipped_benign":
+			benign = append(benign, r.IOC.Value)
+		case "skipped_threshold":
+			below = append(below, r.IOC.Value)
+		}
+		if r.New {
+			fresh = append(fresh, fmt.Sprintf("%s (first reported %d day(s) ago)", r.IOC.Value, r.AgeDays(now)))
+		}
+		if r.Unknown {
+			unknown = append(unknown, r.IOC.Value)
+		}
+	}
+	if len(fresh) > 0 {
+		fmt.Fprintf(c.stderr, "NEW: %d recently reported malicious IOC(s): %s\n", len(fresh), strings.Join(fresh, ", "))
+	}
+	if len(unknown) > 0 {
+		fmt.Fprintf(c.stderr, "UNKNOWN: %d IOC(s) not seen by any source — could be new or targeted: %s\n", len(unknown), strings.Join(unknown, ", "))
+	}
+	if len(added) > 0 {
+		fmt.Fprintf(c.stderr, "%d new malicious IOC(s) added to the local list (%s)\n", len(added), dbPath)
+	}
+	if len(benign) > 0 {
+		fmt.Fprintf(c.stderr, "not added (on a benign warninglist): %s\n", strings.Join(benign, ", "))
+	}
+	if len(below) > 0 {
+		fmt.Fprintf(c.stderr, "not added (flagged by fewer than %d sources): %s\n", saveMin, strings.Join(below, ", "))
+	}
+}
+
 func listSources(w io.Writer, srcs []sources.Source, cfg string, st *store.FileStore) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSOURCE\tIOC TYPES\tAPI KEY\tENV VARIABLE")
+	fmt.Fprintln(tw, "ID\tSOURCE\tIOC TYPES\tAPI KEY\tENV VARIABLE\tQUERIED")
 	for _, s := range srcs {
 		var ts []string
 		for _, t := range ioc.Types {
@@ -332,23 +404,30 @@ func listSources(w io.Writer, srcs []sources.Source, cfg string, st *store.FileS
 		}
 		status := "not needed"
 		switch {
-		case s.ID() == "localdb":
+		case s.ID() == "localdb" || s.ID() == "warninglists":
 			status = "local"
 		case s.RequiresKey() && s.Configured():
 			status = "✓ configured"
 		case s.RequiresKey():
 			status = "✗ missing"
-		case s.ID() == "otx" || s.ID() == "greynoise":
+		case s.ID() == "otx" || s.ID() == "greynoise" || s.ID() == "urlscan" || s.ID() == "pdns":
 			status = "optional"
 		}
 		env := config.EnvVars[s.ID()]
-		if s.ID() == "localdb" {
+		switch s.ID() {
+		case "localdb":
 			env = "ZUHAN_DB"
+		case "warninglists":
+			env = "ZUHAN_WARNINGLISTS"
+		}
+		when := "always"
+		if sources.IsOptIn(s) {
+			when = "on request (-" + s.ID() + ")"
 		}
 		if env == "" {
 			env = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.ID(), s.Name(), strings.Join(ts, ","), status, env)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.ID(), s.Name(), strings.Join(ts, ","), status, env, when)
 	}
 	tw.Flush()
 	if cfg == "" {

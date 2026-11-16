@@ -1,0 +1,14 @@
+ZUHAN
+Copyright (c) DNA Cybertech Solutions
+
+This product includes third-party data:
+
+MITRE ATT&CK (pkg/attack/enterprise.json)
+  © The MITRE Corporation. This work is reproduced and distributed with the
+  permission of The MITRE Corporation. https://attack.mitre.org/
+  ATT&CK® is a registered trademark of The MITRE Corporation.
+  Terms of use: https://attack.mitre.org/resources/legal-and-branding/terms-of-use/
+
+MISP warninglists (pkg/warninglist/default.jsonl.gz)
+  https://github.com/MISP/misp-warninglists
+  Released under CC0 1.0 Universal (public domain dedication).

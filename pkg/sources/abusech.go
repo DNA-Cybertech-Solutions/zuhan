@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/ioc"
@@ -72,6 +73,7 @@ func (s *MalwareBazaar) Query(ctx context.Context, i ioc.IOC) Result {
 		return r
 	}
 	d := data[0]
+	r.seenString(d.FirstSeen.String())
 	r.Status = StatusMalicious
 	r.Score = "known sample"
 	r.Link = "https://bazaar.abuse.ch/sample/" + d.SHA256 + "/"
@@ -142,16 +144,22 @@ func (s *ThreatFox) Query(ctx context.Context, i ioc.IOC) Result {
 	}
 
 	var data []struct {
-		ID         flexStr  `json:"id"`
-		IOC        string   `json:"ioc"`
-		ThreatType flexStr  `json:"threat_type"`
-		IOCType    flexStr  `json:"ioc_type"`
-		Malware    flexStr  `json:"malware_printable"`
-		Confidence flexStr  `json:"confidence_level"`
-		FirstSeen  flexStr  `json:"first_seen"`
-		LastSeen   flexStr  `json:"last_seen"`
-		Tags       []string `json:"tags"`
-		Reporter   flexStr  `json:"reporter"`
+		ID             flexStr  `json:"id"`
+		IOC            string   `json:"ioc"`
+		ThreatType     flexStr  `json:"threat_type"`
+		ThreatTypeDesc flexStr  `json:"threat_type_desc"`
+		IOCType        flexStr  `json:"ioc_type"`
+		IOCTypeDesc    flexStr  `json:"ioc_type_desc"`
+		Malware        flexStr  `json:"malware"`
+		MalwarePrint   flexStr  `json:"malware_printable"`
+		MalwareAlias   flexStr  `json:"malware_alias"`
+		Malpedia       flexStr  `json:"malware_malpedia"`
+		Confidence     flexStr  `json:"confidence_level"`
+		FirstSeen      flexStr  `json:"first_seen"`
+		LastSeen       flexStr  `json:"last_seen"`
+		Reference      flexStr  `json:"reference"`
+		Reporter       flexStr  `json:"reporter"`
+		Tags           []string `json:"tags"`
 	}
 	if err := decodeArray(resp.Data, &data); err != nil {
 		return fail(r, err)
@@ -161,28 +169,112 @@ func (s *ThreatFox) Query(ctx context.Context, i ioc.IOC) Result {
 		return r
 	}
 
-	var malware, threats, iocs, tags []string
+	// A domain or IP search also returns URLs (and host:port) on it. Only
+	// entries for the IOC itself prove it malicious; for google.com the
+	// hits are abused URLs on Google services.
+	exact := 0
 	for _, d := range data {
-		malware = append(malware, d.Malware.String())
-		threats = append(threats, d.ThreatType.String())
-		iocs = append(iocs, d.IOC)
+		if threatFoxExact(i, d.IOC) {
+			exact++
+		}
+	}
+
+	var threatIDs []string
+	var malware, aliases, malpedia, threats, iocTypes, reporters, refs, tags, entries []string
+	maxConf := -1
+	var first, last string
+	for k, d := range data {
+		malware = append(malware, d.MalwarePrint.String())
+		for _, a := range strings.Split(d.MalwareAlias.String(), ",") {
+			aliases = append(aliases, a)
+		}
+		malpedia = append(malpedia, d.Malpedia.String())
+		tt := d.ThreatType.String()
+		threatIDs = append(threatIDs, tt)
+		if desc := d.ThreatTypeDesc.String(); desc != "" {
+			tt += " (" + desc + ")"
+		}
+		threats = append(threats, tt)
+		it := d.IOCType.String()
+		if desc := d.IOCTypeDesc.String(); desc != "" {
+			it += " (" + desc + ")"
+		}
+		iocTypes = append(iocTypes, it)
+		reporters = append(reporters, d.Reporter.String())
+		if ref := d.Reference.String(); strings.HasPrefix(ref, "http") {
+			refs = append(refs, ref)
+		}
 		tags = append(tags, d.Tags...)
+		if c, err := strconv.Atoi(d.Confidence.String()); err == nil && c > maxConf {
+			maxConf = c
+		}
+		if f := d.FirstSeen.String(); f != "" && (first == "" || f < first) {
+			first = f
+		}
+		if l := d.LastSeen.String(); l != "" && l > last {
+			last = l
+		}
+		if exact == 0 || threatFoxExact(i, d.IOC) {
+			r.seenString(d.FirstSeen.String())
+		}
+		if k < 5 {
+			e := fmt.Sprintf("#%s %s · %s · %s%% · %s", d.ID, d.IOC, d.MalwarePrint, d.Confidence, d.FirstSeen)
+			if rep := d.Reporter.String(); rep != "" {
+				e += " · by " + rep
+			}
+			entries = append(entries, e)
+		}
 	}
 	r.Status = StatusMalicious
 	r.Score = fmt.Sprintf("%d hit(s)", len(data))
+	if exact == 0 {
+		r.Status = StatusSuspicious
+		r.Score = fmt.Sprintf("%d related", len(data))
+		r.FirstSeen = nil
+		r.add("Match", fmt.Sprintf("the IOC itself is not listed; %d listed IOC(s) contain it (URLs or ports on this host)", len(data)))
+	}
 	r.Link = "https://threatfox.abuse.ch/ioc/" + data[0].ID.String() + "/"
 	r.addList("Malware", malware, 6)
+	r.addList("Malware aliases", aliases, 8)
+	r.addList("Malpedia", malpedia, 3)
 	r.addList("Threat type", threats, 6)
-	r.add("Confidence", data[0].Confidence.String()+"%")
-	r.add("First seen", data[0].FirstSeen.String())
-	if i.Type.IsHash() || len(iocs) > 1 {
-		r.addList("Related IOCs", iocs, 8)
+	r.addList("IOC type", iocTypes, 4)
+	if maxConf >= 0 {
+		r.add("Confidence", fmt.Sprintf("%d%%", maxConf))
 	}
-	r.addList("Tags", tags, 10)
-	r.Summary = strings.Join(uniq(malware), ", ")
-	if t := strings.Join(uniq(threats), ", "); t != "" {
-		r.Summary += " · " + t
+	r.add("First seen", first)
+	r.add("Last seen", last)
+	r.addList("Reporter", reporters, 5)
+	r.addList("Reference", refs, 3)
+	r.addList("Tags", tags, 12)
+	if i.Type.IsHash() || len(data) > 1 {
+		r.add("Entries", strings.Join(entries, "\n"))
+		if len(data) > 5 {
+			r.add("More entries", fmt.Sprintf("%d more on ThreatFox", len(data)-5))
+		}
 	}
+
+	short := func(list []string, n int) string {
+		u := uniq(list)
+		if len(u) > n {
+			return strings.Join(u[:n], ", ") + fmt.Sprintf(" +%d more", len(u)-n)
+		}
+		return strings.Join(u, ", ")
+	}
+	sum := []string{short(malware, 3)}
+	if exact == 0 {
+		sum[0] = fmt.Sprintf("not listed itself; %d related IOC(s) on this host: %s", len(data), sum[0])
+	}
+	if t := short(threatIDs, 3); t != "" {
+		sum = append(sum, t)
+	}
+	if maxConf >= 0 {
+		sum = append(sum, fmt.Sprintf("confidence %d%%", maxConf))
+	}
+	if first != "" {
+		sum = append(sum, "first seen "+strings.SplitN(first, " ", 2)[0])
+	}
+	r.Summary = strings.Trim(strings.Join(sum, " · "), " ·")
 	return r
 }
 
@@ -258,6 +350,8 @@ func (s *URLhaus) Query(ctx context.Context, i ioc.IOC) Result {
 	}
 	r.Status = StatusMalicious
 	r.Link = resp.Reference.String()
+	r.seenString(resp.DateAdded.String())
+	r.seenString(resp.FirstSeen.String())
 
 	switch endpoint {
 	case "/url/":
@@ -308,4 +402,26 @@ func (s *URLhaus) Query(ctx context.Context, i ioc.IOC) Result {
 		r.Summary = fmt.Sprintf("hosts %s malicious URL(s), %d online", resp.URLCount, online)
 	}
 	return r
+}
+
+// threatFoxExact reports whether a ThreatFox entry is the searched IOC
+// itself (an "ip:port" or "domain:port" entry counts as the host).
+func threatFoxExact(i ioc.IOC, entry string) bool {
+	e := strings.ToLower(strings.TrimSpace(entry))
+	v := strings.ToLower(i.Value)
+	switch {
+	case i.Type.IsHash():
+		return true
+	case e == v:
+		return true
+	case i.Type == ioc.URL:
+		return strings.TrimSuffix(e, "/") == strings.TrimSuffix(v, "/")
+	case i.Type == ioc.IPv6:
+		return e == "["+v+"]" || strings.HasPrefix(e, "["+v+"]:")
+	}
+	if rest, ok := strings.CutPrefix(e, v+":"); ok {
+		_, err := strconv.Atoi(rest)
+		return err == nil
+	}
+	return false
 }

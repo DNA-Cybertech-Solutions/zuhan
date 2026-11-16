@@ -346,3 +346,35 @@ func TestKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestAttackLayerAndOptIn(t *testing.T) {
+	e := setup(t)
+	e.srv.Base.Use(&sources.DNS{})
+	var info struct {
+		Sources      []sourceInfo
+		Warninglists map[string]any `json:"warninglists"`
+	}
+	json.Unmarshal(e.do("GET", "/api/info", nil).Body.Bytes(), &info)
+	last := info.Sources[len(info.Sources)-1]
+	if last.ID != "dns" || !last.OptIn || info.Warninglists == nil || info.Warninglists["updatable"] != false {
+		t.Fatalf("info %+v", info)
+	}
+	// no source list → defaults, which skip the opt-in DNS source
+	w := e.do("POST", "/api/scan", map[string]any{"values": "evil.com", "save": true, "save_min": 3, "new_days": -1})
+	if strings.Contains(w.Body.String(), "DNS (live)") || !strings.Contains(w.Body.String(), `"local_db":"skipped_threshold"`) {
+		t.Fatalf("scan: %s", w.Body.String())
+	}
+
+	reps := []map[string]any{{"ioc": map[string]any{"value": "evil.com", "type": "domain"},
+		"attack": []map[string]any{{"id": "T1105", "name": "Ingress Tool Transfer", "sources": []string{"X"}}}}}
+	w = e.do("POST", "/api/attack-layer", map[string]any{"reports": reps})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"techniqueID": "T1105"`) && !strings.Contains(w.Body.String(), `"techniqueID":"T1105"`) {
+		t.Fatalf("layer: %d %s", w.Code, w.Body.String())
+	}
+	if w := e.do("POST", "/api/attack-layer", map[string]any{"reports": []any{}}); w.Code != 400 {
+		t.Fatalf("empty layer: %d", w.Code)
+	}
+	if w := e.do("POST", "/api/warninglists/update", map[string]any{}); w.Code != 503 {
+		t.Fatalf("update without path: %d", w.Code)
+	}
+}

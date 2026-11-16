@@ -31,12 +31,14 @@ import (
 	"time"
 
 	"github.com/DNA-Cybertech-Solutions/zuhan"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/attack"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/extract"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/ioc"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/report"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/store"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/warninglist"
 )
 
 //go:embed index.html
@@ -58,6 +60,9 @@ type Server struct {
 	// fresh keys into a new scanner. If either is unset, keys are read-only.
 	ConfigFile string
 	Rebuild    func(sources.Keys) *zuhan.Scanner
+	// WarninglistPath is where "Update warninglists" stores the download
+	// ("" disables the update button).
+	WarninglistPath string
 
 	mu    sync.RWMutex // guards Base
 	token string
@@ -100,6 +105,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/extract", s.extract)
 	mux.HandleFunc("POST /api/hash", s.hash)
 	mux.HandleFunc("POST /api/report", s.report)
+	mux.HandleFunc("POST /api/attack-layer", s.attackLayer)
+	mux.HandleFunc("POST /api/warninglists/update", s.wlUpdate)
 	mux.HandleFunc("GET /api/db", s.dbList)
 	mux.HandleFunc("POST /api/db/add", s.dbAdd)
 	mux.HandleFunc("POST /api/db/delete", s.dbDelete)
@@ -203,26 +210,40 @@ type sourceInfo struct {
 	Name   string     `json:"name"`
 	Types  []ioc.Type `json:"types"`
 	Status string     `json:"status"` // local | configured | missing | optional | free
+	// OptIn sources (live DNS) are only queried when explicitly selected.
+	OptIn bool   `json:"opt_in,omitempty"`
+	Note  string `json:"note,omitempty"`
+}
+
+func (s *Server) pool() []sources.Source {
+	b := s.base()
+	if len(b.Available) > 0 {
+		return b.Available
+	}
+	return b.Sources
 }
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 	base := s.base()
 	var srcs []sourceInfo
-	for _, src := range base.Sources {
-		si := sourceInfo{ID: src.ID(), Name: src.Name(), Status: "free"}
+	for _, src := range s.pool() {
+		si := sourceInfo{ID: src.ID(), Name: src.Name(), Status: "free", OptIn: sources.IsOptIn(src)}
+		if si.OptIn {
+			si.Note = "off by default: the lookup goes through your DNS resolver and can reach the attacker's name server"
+		}
 		for _, t := range ioc.Types {
 			if src.Supports(t) {
 				si.Types = append(si.Types, t)
 			}
 		}
 		switch {
-		case src.ID() == "localdb":
+		case isLocal(src):
 			si.Status = "local"
 		case src.RequiresKey() && src.Configured():
 			si.Status = "configured"
 		case src.RequiresKey():
 			si.Status = "missing"
-		case src.ID() == "otx" || src.ID() == "greynoise":
+		case src.ID() == "otx" || src.ID() == "greynoise" || src.ID() == "urlscan" || src.ID() == "pdns":
 			si.Status = "optional"
 		}
 		srcs = append(srcs, si)
@@ -233,10 +254,24 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 			count = len(es)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"version": s.Version, "db_path": s.DBPath, "config_path": s.ConfigPath,
 		"db_count": count, "sources": srcs, "keys_editable": s.ConfigFile != "" && s.Rebuild != nil,
-	})
+		"attack_version": attack.Version(),
+	}
+	if set, err := warninglist.Load(s.WarninglistPath); err == nil {
+		wl := map[string]any{"lists": set.Len(), "source": set.Source, "updatable": s.WarninglistPath != ""}
+		if !set.Updated.IsZero() {
+			wl["updated"] = set.Updated.Format("2006-01-02")
+		}
+		out["warninglists"] = wl
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func isLocal(src sources.Source) bool {
+	l, ok := src.(sources.LocalOnly)
+	return ok && l.LocalOnly()
 }
 
 // ---------------- scan (streams NDJSON) ----------------
@@ -260,6 +295,8 @@ type scanReq struct {
 	KeepPrivate    bool       `json:"keep_private"`
 	Max            int        `json:"max"`
 	TimeoutSec     int        `json:"timeout_sec"`
+	SaveMin        int        `json:"save_min"` // sources that must flag before auto-add (default 1)
+	NewDays        int        `json:"new_days"` // "NEW" window in days (default 7, negative = off)
 }
 
 func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
@@ -317,10 +354,11 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 	for _, id := range req.Sources {
 		want[id] = true
 	}
-	for _, src := range base.Sources {
+	for _, src := range s.pool() {
 		switch {
-		case req.Offline && src.ID() != "localdb":
+		case req.Offline && !isLocal(src):
 		case !req.Offline && len(want) > 0 && !want[src.ID()]:
+		case !req.Offline && len(want) == 0 && sources.IsOptIn(src):
 		default:
 			sc.Sources = append(sc.Sources, src)
 		}
@@ -329,7 +367,10 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "no source selected")
 		return
 	}
-	sc.Save = zuhan.SavePolicy{Enabled: req.Save && !req.Offline, IncludeSuspicious: req.SaveSuspicious}
+	if req.SaveMin < 1 {
+		req.SaveMin = 1
+	}
+	sc.Save = zuhan.SavePolicy{Enabled: req.Save && !req.Offline, IncludeSuspicious: req.SaveSuspicious, MinSources: req.SaveMin}
 	timeout := 25 * time.Second
 	if req.TimeoutSec > 0 {
 		timeout = time.Duration(req.TimeoutSec) * time.Second
@@ -354,14 +395,21 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 	}
 	send(start)
 
-	sc.Engine = engine.Options{Timeout: timeout, Parallel: 4, Progress: func(done, total int) {
+	sc.Engine = engine.Options{Timeout: timeout, Parallel: 4, NewDays: req.NewDays, Progress: func(done, total int) {
 		send(map[string]any{"type": "progress", "done": done, "total": total})
 	}}
 	reps, err := sc.Scan(r.Context(), iocs)
 	if r.Context().Err() != nil {
 		return
 	}
-	out := map[string]any{"type": "result", "reports": reps, "summary": report.Summarize(reps)}
+	now := time.Now()
+	notes := make([][]report.Note, len(reps))
+	for k, rep := range reps {
+		notes[k] = report.Notes(rep, now)
+	}
+	hits := report.Techniques(reps)
+	out := map[string]any{"type": "result", "reports": reps, "summary": report.Summarize(reps),
+		"notes": notes, "attack": attack.ByTactic(hits), "attack_count": len(hits)}
 	if err != nil {
 		out["save_error"] = err.Error()
 	}
@@ -441,6 +489,47 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="zuhan-report-%s.%s"`, time.Now().Format("20060102-150405"), ext))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	report.Write(w, format, req.Reports, report.Options{Verbose: true, Version: s.Version, Generated: time.Now()})
+}
+
+// attackLayer turns posted scan results into an ATT&CK Navigator layer.
+func (s *Server) attackLayer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Reports []engine.Report `json:"reports"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	hits := report.Techniques(req.Reports)
+	if len(hits) == 0 {
+		writeErr(w, http.StatusBadRequest, "no ATT&CK techniques in these results")
+		return
+	}
+	now := time.Now()
+	b, err := attack.Layer("ZUHAN scan "+now.Format("2006-01-02 15:04"),
+		fmt.Sprintf("%d technique(s) from %d IOC(s), generated by ZUHAN %s", len(hits), len(req.Reports), s.Version), hits)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="zuhan-attack-%s.json"`, now.Format("20060102-150405")))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(b)
+}
+
+// wlUpdate downloads the current MISP warninglists.
+func (s *Server) wlUpdate(w http.ResponseWriter, r *http.Request) {
+	if s.WarninglistPath == "" {
+		writeErr(w, http.StatusServiceUnavailable, "warninglist updates are not enabled")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	res, err := warninglist.Update(ctx, s.WarninglistPath, warninglist.UpdateOptions{})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // ---------------- local IOC list ----------------

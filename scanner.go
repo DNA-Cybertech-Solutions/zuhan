@@ -20,41 +20,82 @@ import (
 	"io"
 	"time"
 
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/config"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/extract"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/ioc"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/store"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/warninglist"
 )
 
 // SavePolicy controls what gets written to the local list after a scan.
 type SavePolicy struct {
 	Enabled           bool // add IOCs that external sources flagged as malicious
 	IncludeSuspicious bool // also add suspicious ones
+	// MinSources is how many external sources must flag an IOC before it is
+	// added (default 1). IOCs on a benign allow-list are never auto-added.
+	MinSources int
 }
 
 // Scanner ties sources, the local store and the scan engine together.
 type Scanner struct {
-	Sources []sources.Source
-	Store   store.Store // nil = no local list
-	Engine  engine.Options
-	Save    SavePolicy
-	Now     func() time.Time // for tests; defaults to time.Now
+	// Sources are queried on every scan. Available additionally holds
+	// opt-in sources (live DNS) that callers can select by ID.
+	Sources   []sources.Source
+	Available []sources.Source
+	Store     store.Store // nil = no local list
+	Engine    engine.Options
+	Save      SavePolicy
+	Now       func() time.Time // for tests; defaults to time.Now
 }
 
 // New returns a Scanner with the local list (if st != nil) as the first
 // source, followed by every built-in provider, and auto-save enabled.
 func New(keys sources.Keys, st store.Store) *Scanner {
-	s := &Scanner{Store: st, Save: SavePolicy{Enabled: true}}
+	s := &Scanner{Store: st, Save: SavePolicy{Enabled: true, MinSources: 1}}
 	if st != nil {
-		s.Sources = append(s.Sources, &store.LocalSource{Store: st})
+		s.Available = append(s.Available, &store.LocalSource{Store: st})
 	}
-	s.Sources = append(s.Sources, sources.All(keys)...)
+	s.Available = append(s.Available, &warninglist.Source{Path: config.WarninglistPath()})
+	s.Available = append(s.Available, sources.All(keys)...)
+	s.Sources = sources.Default(s.Available)
 	return s
 }
 
+// Select returns the sources to query: every default source when ids is
+// empty, else exactly the listed IDs (opt-in ones included); exclude
+// removes IDs either way.
+func (s *Scanner) Select(ids, exclude []string) []sources.Source {
+	pool := s.Available
+	if len(pool) == 0 {
+		pool = s.Sources
+	}
+	inc, exc := map[string]bool{}, map[string]bool{}
+	for _, id := range ids {
+		inc[id] = true
+	}
+	for _, id := range exclude {
+		exc[id] = true
+	}
+	var out []sources.Source
+	for _, src := range pool {
+		switch {
+		case exc[src.ID()]:
+		case len(inc) > 0 && !inc[src.ID()]:
+		case len(inc) == 0 && sources.IsOptIn(src):
+		default:
+			out = append(out, src)
+		}
+	}
+	return out
+}
+
 // Use registers additional sources (custom providers).
-func (s *Scanner) Use(src ...sources.Source) { s.Sources = append(s.Sources, src...) }
+func (s *Scanner) Use(src ...sources.Source) {
+	s.Sources = append(s.Sources, src...)
+	s.Available = append(s.Available, src...)
+}
 
 // Scan looks up already-parsed IOCs and records results in the local list.
 func (s *Scanner) Scan(ctx context.Context, iocs []ioc.IOC) ([]engine.Report, error) {
@@ -137,6 +178,22 @@ func Record(st store.Store, reps []engine.Report, p SavePolicy, now time.Time) e
 		}
 		v, _, _ := engine.Verdict(ext)
 		save := p.Enabled && (v == sources.StatusMalicious || (p.IncludeSuspicious && v == sources.StatusSuspicious))
+		if save && len(rep.Benign) > 0 {
+			save = false
+			rep.LocalDB = "skipped_benign"
+		}
+		if save {
+			n := 0
+			for _, r := range ext {
+				if r.Status == sources.StatusMalicious || (p.IncludeSuspicious && r.Status == sources.StatusSuspicious) {
+					n++
+				}
+			}
+			if min := p.MinSources; n < min {
+				save = false
+				rep.LocalDB = "skipped_threshold"
+			}
+		}
 		if !save {
 			if localHit {
 				if _, ok, _ := st.Get(rep.IOC.Type, rep.IOC.Value); ok {

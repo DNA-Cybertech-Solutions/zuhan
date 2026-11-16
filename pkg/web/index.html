@@ -77,7 +77,7 @@ input[type=number]{width:72px}
 .seg{display:inline-flex;background:var(--line2);border-radius:9px;padding:3px;gap:2px;margin-bottom:12px}
 .seg button{border:0;background:transparent;border-radius:7px;padding:6px 14px;cursor:pointer;font-weight:600;color:var(--mut)}
 .seg button.active{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
-.seg.small{margin:0}
+.seg.small{margin:0;flex-wrap:wrap}
 .seg.small button{padding:4px 11px;font-size:12px}
 
 .opts{margin-top:14px;padding-top:14px;border-top:1px solid var(--line2);display:flex;flex-direction:column;gap:12px}
@@ -152,6 +152,25 @@ summary{cursor:pointer;color:var(--mut);font-size:12px}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 14px;margin:6px 0 2px;font-size:12px}
 dt{color:var(--mut)}dd{margin:0;word-break:break-word}
 .empty{text-align:center;color:var(--mut);padding:40px 16px}
+.notes{display:flex;flex-direction:column;gap:5px;padding:10px 16px;border-bottom:1px solid var(--line2);font-size:13px}
+.note{display:flex;gap:10px;align-items:baseline}
+.note .badge{min-width:98px;text-align:center;flex:none}
+.badge.new{background:var(--mal);color:#fff}
+.badge.unknown{background:var(--sus-bg);color:var(--sus);outline:1px dashed var(--sus)}
+.badge.benign,.badge.downgraded{background:var(--cln-bg);color:var(--cln)}
+.badge.context{background:var(--inf-bg);color:var(--inf)}
+.badge.first_seen{background:var(--nf-bg);color:var(--nf)}
+.badge.attack{background:var(--err-bg);color:var(--err)}
+.flagrow{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.tid{font-family:var(--mono);font-size:12px;font-weight:600;text-decoration:none}
+.tid:hover{text-decoration:underline}
+.att{margin-bottom:14px}
+.att .head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;margin-bottom:6px}
+.att h2{margin:0}
+.attrow{display:grid;grid-template-columns:190px 1fr;gap:12px;padding:7px 0;border-top:1px solid var(--line2);font-size:13px}
+.attrow>b{color:var(--mut);font-size:12px;font-weight:700}
+.attrow .t{display:flex;flex-wrap:wrap;gap:4px 14px}
+@media (max-width:640px){.attrow{grid-template-columns:1fr;gap:2px}}
 
 /* db table */
 .dbtable td{font-size:13px}
@@ -208,7 +227,7 @@ dt{color:var(--mut)}dd{margin:0;word-break:break-word}
 <!-- ============ SCAN ============ -->
 <section id="tab-scan" class="tab">
   <div class="banner" id="keyBanner" hidden>
-    <span>No API keys yet. Only sources that need no key (local list, OTX, GreyNoise, Shodan) will be queried.</span>
+    <span>No API keys yet. Only sources that need no key (local list, warninglists, OTX, GreyNoise, Shodan, RDAP…) will be queried.</span>
     <button class="btn tiny" id="goKeys">Add API keys →</button>
   </div>
   <div class="panel">
@@ -246,9 +265,13 @@ dt{color:var(--mut)}dd{margin:0;word-break:break-word}
     <div class="opts">
       <div class="srcchips" id="srcChips"></div>
       <div class="row">
-        <label class="chk"><input type="checkbox" id="optOffline"> Local list only (no internet)</label>
+        <label class="chk" title="Only the local IOC list and the MISP warninglists are checked"><input type="checkbox" id="optOffline"> Local data only (no internet)</label>
         <label class="chk"><input type="checkbox" id="optSave" checked> Add malicious results to the list</label>
         <label class="chk"><input type="checkbox" id="optSaveSus"> Also add suspicious</label>
+        <label class="num" title="Auto-add an IOC only when at least this many sources flag it; IOCs on a benign warninglist are never added">when flagged by ≥ <input type="number" id="saveMin" value="1" min="1" max="20"> source(s)</label>
+      </div>
+      <div class="row">
+        <label class="num" title="Mark malicious/suspicious IOCs first reported within this many days as NEW (0 = off)">Mark as <b>NEW</b> if first reported within <input type="number" id="newDays" value="7" min="0" max="365"> days</label>
       </div>
     </div>
 
@@ -268,6 +291,8 @@ dt{color:var(--mut)}dd{margin:0;word-break:break-word}
         <button data-f="suspicious">Suspicious</button>
         <button data-f="clean">Clean</button>
         <button data-f="not_found">Not found</button>
+        <button data-f="new">New</button>
+        <button data-f="unknown">Unknown</button>
       </div>
       <div class="row">
         <span class="meta">Download report:</span>
@@ -277,6 +302,7 @@ dt{color:var(--mut)}dd{margin:0;word-break:break-word}
         <button class="btn tiny" data-rep="md">Markdown</button>
       </div>
     </div>
+    <div class="panel att" id="attPanel" hidden></div>
     <div id="cards"></div>
   </div>
 </section>
@@ -359,6 +385,11 @@ dt{color:var(--mut)}dd{margin:0;word-break:break-word}
       <thead><tr><th>ID</th><th>Source</th><th>IOC types</th><th>API key</th></tr></thead>
       <tbody id="srcBody"></tbody>
     </table></div>
+  </div>
+  <div class="panel" id="wlPanel" hidden>
+    <div class="row between"><h2 style="margin:0">MISP warninglists</h2><button class="btn tiny" id="wlUpdate">Update from GitHub</button></div>
+    <p class="hint" id="wlInfo"></p>
+    <p class="hint">Lists of known-benign infrastructure (public DNS resolvers, popular sites, known false-positive hashes…) and context (cloud ranges, Tor exit nodes, scanners). A benign hit turns a <i>suspicious</i> verdict into clean and keeps the IOC out of your list; matching is done on this computer. The update downloads lists up to 5 MB each from github.com/MISP/misp-warninglists.</p>
   </div>
   <div class="panel">
     <h2>Files</h2>
@@ -474,9 +505,9 @@ async function loadInfo() {
   for (const s of INFO.sources) {
     const off = s.status === "missing";
     const cb = el("input", { type: "checkbox", value: s.id, disabled: off });
-    cb.checked = !off && (prev.has(s.id) ? prev.get(s.id) : true);
-    chips.append(el("label", { class: "srcchip" + (off ? " off" : ""), title: off ? "No API key configured (Sources & API keys tab)" : s.types.join(", ") },
-      cb, s.name, off ? el("span", { class: "k", text: "no key" }) : null));
+    cb.checked = !off && (prev.has(s.id) ? prev.get(s.id) : !s.opt_in);
+    chips.append(el("label", { class: "srcchip" + (off ? " off" : ""), title: off ? "No API key configured (Sources & API keys tab)" : (s.note || s.types.join(", ")) },
+      cb, s.name, off ? el("span", { class: "k", text: "no key" }) : s.opt_in ? el("span", { class: "k", text: "opt-in" }) : null));
   }
 
   $("#keyBanner").hidden = INFO.sources.some(s => s.status === "configured") || !INFO.sources.some(s => s.status === "missing");
@@ -484,12 +515,28 @@ async function loadInfo() {
   $("#srcBody").replaceChildren(...INFO.sources.map(s => {
     const [txt, cls] = KEYSTATUS[s.status] || [s.status, "opt"];
     return el("tr", {}, el("td", { class: "mono", text: s.id }), el("td", { class: "src", text: s.name }),
-      el("td", { class: "meta", text: s.types.join(", ") }), el("td", {}, el("span", { class: cls, text: txt })));
+      el("td", { class: "meta", text: s.types.join(", ") + (s.opt_in ? " · opt-in" : "") }), el("td", {}, el("span", { class: cls, text: txt })));
   }));
+  const wl = INFO.warninglists;
+  $("#wlPanel").hidden = !wl;
+  if (wl) {
+    $("#wlInfo").textContent = `${wl.lists} lists loaded from ${wl.source}${wl.updated ? " · newest list " + wl.updated : ""}`;
+    $("#wlUpdate").hidden = !wl.updatable;
+  }
   $("#paths").replaceChildren(
     el("dt", { text: "Config (API keys)" }), el("dd", { text: INFO.config_path || "—" }),
-    el("dt", { text: "Local IOC list" }), el("dd", { text: INFO.db_path }));
+    el("dt", { text: "Local IOC list" }), el("dd", { text: INFO.db_path }),
+    el("dt", { text: "MITRE ATT&CK" }), el("dd", { text: "Enterprise " + (INFO.attack_version || "?") + " (built in)" }));
 }
+$("#wlUpdate").onclick = async e => {
+  const b = e.target; b.disabled = true; b.textContent = "Downloading…";
+  try {
+    const r = await api("/api/warninglists/update", { body: {} });
+    toast(`${r.lists} warninglists (${r.entries.toLocaleString("en-US")} entries) downloaded`, "ok");
+    loadInfo();
+  } catch (err) { toast(err.message, "err"); }
+  finally { b.disabled = false; b.textContent = "Update from GitHub"; }
+};
 const selectedSources = () => $$("#srcChips input:checked").map(i => i.value);
 
 /* ---------------- scan: input modes ---------------- */
@@ -501,7 +548,7 @@ $$("#mode button").forEach(b => b.onclick = () => {
 });
 $("#optOffline").onchange = e => {
   $("#srcChips").style.opacity = e.target.checked ? .4 : 1;
-  $("#optSave").disabled = $("#optSaveSus").disabled = e.target.checked;
+  $("#optSave").disabled = $("#optSaveSus").disabled = $("#saveMin").disabled = e.target.checked;
 };
 for (const id of ["#iocInput", "#dumpInput"]) {
   $(id).addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runScan(); } });
@@ -554,7 +601,7 @@ function renderFiles() {
 }
 
 /* ---------------- scan: run ---------------- */
-let lastReports = [], scanCtl = null, resFilter = "all";
+let lastReports = [], lastAttack = { groups: [], count: 0 }, scanCtl = null, resFilter = "all";
 function setBusy(b) {
   $("#scanBtn").disabled = b;
   $("#scanBtn").replaceChildren(b ? el("span", { class: "spin" }) : "", b ? " Scanning" : "Scan");
@@ -576,6 +623,8 @@ async function runScan() {
     offline: $("#optOffline").checked,
     save: $("#optSave").checked,
     save_suspicious: $("#optSaveSus").checked,
+    save_min: Math.max(1, parseInt($("#saveMin").value, 10) || 1),
+    new_days: (d => d > 0 ? d : -1)(parseInt($("#newDays").value, 10) || 0),
     keep_private: $("#keepPrivate").checked,
     max: Math.max(0, parseInt($("#maxIocs").value, 10) || 0),
   };
@@ -622,10 +671,14 @@ function onEvent(ev) {
     progress(ev.done, ev.total);
   } else if (ev.type === "result") {
     lastReports = ev.reports || [];
+    lastReports.forEach((r, k) => r.notes = (ev.notes || [])[k] || []);
+    lastAttack = { groups: ev.attack || [], count: ev.attack_count || 0 };
     renderResults(ev.summary);
     if (ev.save_error) toast("Could not update the local list: " + ev.save_error, "err");
     const added = lastReports.filter(r => r.local_db === "added").length;
     if (added) toast(`${added} malicious IOC(s) added to the local list`, "ok");
+    const fresh = lastReports.filter(r => r.new).length;
+    if (fresh) toast(`⚠ ${fresh} recently reported malicious IOC(s) — marked NEW`, "err");
     loadInfo();
   }
 }
@@ -635,6 +688,7 @@ function renderResults(sum) {
   const tiles = [["", "IOCs", sum.Total], ["malicious", "Malicious", sum.Malicious], ["suspicious", "Suspicious", sum.Suspicious],
                  ["clean", "Clean", sum.Clean], ["not_found", "Not found", sum.NotFound]];
   $("#stats").replaceChildren(...tiles.map(([c, l, n]) => el("div", { class: "stat " + c }, el("b", { text: n }), el("span", { text: l }))));
+  renderAttack();
   renderCards();
   $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -646,13 +700,31 @@ $$("#resFilter button").forEach(b => b.onclick = () => {
 function matchFilter(r) {
   if (resFilter === "all") return true;
   if (resFilter === "clean") return r.verdict === "clean" || r.verdict === "info";
+  if (resFilter === "new") return !!r.new;
+  if (resFilter === "unknown") return !!r.unknown;
   return r.verdict === resFilter;
 }
 function renderCards() {
   const reps = lastReports.filter(matchFilter);
   $("#cards").replaceChildren(...(reps.length ? reps.map(card) : [el("div", { class: "panel empty", text: "No results for this filter." })]));
 }
-const LOCALTXT = { added: "✚ Added to local list", updated: "↻ Updated in local list", matched: "● Already in local list" };
+const LOCALTXT = { added: "✚ Added to local list", updated: "↻ Updated in local list", matched: "● Already in local list",
+  skipped_benign: "Not added: on a benign allow-list", skipped_threshold: "Not added: flagged by too few sources" };
+const ATTURL = id => "https://attack.mitre.org/techniques/" + id.replace(".", "/") + "/";
+const tlink = id => el("a", { class: "tid", href: ATTURL(id), target: "_blank", rel: "noopener noreferrer", text: id });
+function renderAttack() {
+  const p = $("#attPanel");
+  p.hidden = !lastAttack.count;
+  if (!lastAttack.count) return;
+  p.replaceChildren(
+    el("div", { class: "head" },
+      el("h2", { text: `MITRE ATT&CK — ${lastAttack.count} technique(s)` }),
+      el("button", { class: "btn tiny", text: "Download Navigator layer", title: "Open it at mitre-attack.github.io/attack-navigator",
+        onclick: () => download("/api/attack-layer", { reports: lastReports }, "zuhan-attack.json") })),
+    ...lastAttack.groups.map(g => el("div", { class: "attrow" }, el("b", { text: g.tactic }),
+      el("div", { class: "t" }, g.techniques.map(h => el("span", { title: "Seen with: " + (h.iocs || []).join(", ") + "\nReported by: " + h.sources.join(", ") },
+        tlink(h.id), " " + h.name))))));
+}
 function card(rep) {
   const i = rep.ioc, meta = [i.type];
   if (i.raw && i.raw !== i.value) meta.push("input: " + i.raw);
@@ -664,20 +736,33 @@ function card(rep) {
     el("td", {}, r.error ? el("span", { class: "errtxt", text: r.error }) : (r.summary || ""),
       r.fields && r.fields.length ? el("details", {}, el("summary", { text: r.fields.length + " fields" }),
         el("dl", {}, r.fields.map(f => [el("dt", { text: f.key }), el("dd", { text: f.value })]))) : null)));
-  const listed = rep.local_db || (rep.results || []).some(r => r.source === "Local IOC DB" && (r.status === "malicious" || r.status === "suspicious"));
+  const listed = ["added", "updated", "matched"].includes(rep.local_db) || (rep.results || []).some(r => r.source === "Local IOC DB" && (r.status === "malicious" || r.status === "suspicious"));
   return el("article", { class: "card", "data-verdict": rep.verdict },
     el("header", {},
       el("div", {}, el("div", { class: "val mono", text: i.value }), el("div", { class: "meta", text: meta.join(" · ") })),
       el("div", { class: "right" },
-        badge(rep.verdict, true),
+        el("div", { class: "flagrow" },
+          rep.new ? el("span", { class: "badge new big", text: "NEW" }) : null,
+          rep.unknown ? el("span", { class: "badge unknown big", text: "UNKNOWN" }) : null,
+          badge(rep.verdict, true)),
         el("div", { class: "meta", text: `${rep.flagged}/${rep.queried} sources flagged` }),
         rep.local_db ? el("div", { class: "meta local", text: LOCALTXT[rep.local_db] || rep.local_db }) : null,
         el("div", { class: "cardbtns" },
           el("button", { class: "btn tiny ghost", text: "Copy", onclick: () => copy(i.value) }),
           listed ? null : el("button", { class: "btn tiny ghost", text: "Add to list", onclick: e => quickAdd(i.value, e.target) })))),
+    notesBlock(rep),
     rows.length ? el("div", { class: "tablewrap" }, el("table", { class: "restable" },
       el("thead", {}, el("tr", {}, ["Source", "Status", "Score", "Details"].map(h => el("th", { text: h })))),
       el("tbody", {}, rows))) : el("div", { class: "empty", text: "No selected source supports this IOC type." }));
+}
+function notesBlock(rep) {
+  const ns = rep.notes || [], att = rep.attack || [];
+  if (!ns.length && !att.length) return null;
+  return el("div", { class: "notes" },
+    ns.map(n => el("div", { class: "note" }, el("span", { class: "badge " + n.kind, text: n.tag }), el("span", { text: n.text }))),
+    att.map(h => el("div", { class: "note" }, el("span", { class: "badge attack", text: "ATT&CK" }),
+      el("span", {}, tlink(h.id), " " + h.name, h.tactics && h.tactics.length ? el("span", { class: "meta", text: " (" + h.tactics.join(", ") + ")" }) : null,
+        el("span", { class: "meta", text: " ← " + h.sources.join(", ") })))));
 }
 async function quickAdd(value, btn) {
   try {

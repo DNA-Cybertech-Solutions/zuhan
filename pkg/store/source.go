@@ -29,6 +29,7 @@ func (s *LocalSource) Name() string             { return LocalSourceName }
 func (s *LocalSource) RequiresKey() bool        { return false }
 func (s *LocalSource) Configured() bool         { return s.Store != nil }
 func (s *LocalSource) Supports(t ioc.Type) bool { return t.Valid() }
+func (s *LocalSource) LocalOnly() bool          { return true }
 
 func (s *LocalSource) Query(ctx context.Context, i ioc.IOC) sources.Result {
 	r := sources.Result{Source: s.Name()}

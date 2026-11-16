@@ -49,9 +49,15 @@ func (s *OTX) Query(ctx context.Context, i ioc.IOC) Result {
 		PulseInfo struct {
 			Count  int `json:"count"`
 			Pulses []struct {
-				Name            string   `json:"name"`
-				Tags            []string `json:"tags"`
-				Adversary       string   `json:"adversary"`
+				Name      string   `json:"name"`
+				Tags      []string `json:"tags"`
+				Adversary string   `json:"adversary"`
+				Created   string   `json:"created"`
+				AttackIDs []struct {
+					ID          string `json:"id"`
+					Name        string `json:"name"`
+					DisplayName string `json:"display_name"`
+				} `json:"attack_ids"`
 				MalwareFamilies []struct {
 					DisplayName string `json:"display_name"`
 				} `json:"malware_families"`
@@ -82,6 +88,12 @@ func (s *OTX) Query(ctx context.Context, i ioc.IOC) Result {
 		pulses = append(pulses, p.Name)
 		tags = append(tags, p.Tags...)
 		adversaries = append(adversaries, p.Adversary)
+		for _, a := range p.AttackIDs {
+			r.technique(a.ID, a.Name)
+		}
+		if len(p.MalwareFamilies) > 0 || pi.Count >= 5 {
+			r.seenString(p.Created)
+		}
 		for _, f := range p.MalwareFamilies {
 			families = append(families, f.DisplayName)
 		}
@@ -101,6 +113,7 @@ func (s *OTX) Query(ctx context.Context, i ioc.IOC) Result {
 	r.Score = fmt.Sprintf("%d pulse(s)", pi.Count)
 	switch {
 	case len(benign) > 0 && len(families) == 0:
+		r.Benign = "OTX allow-list: " + strings.Join(uniq(benign), ", ")
 		r.Status = StatusClean
 		r.Summary = "whitelisted: " + strings.Join(uniq(benign), ", ")
 	case pi.Count == 0:

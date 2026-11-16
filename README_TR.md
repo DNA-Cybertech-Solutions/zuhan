@@ -13,10 +13,22 @@ tarayıcı arayüzünden** ya da bir **Go kütüphanesi** olarak.
 ## Özellikler
 
 - **Tek sorgu, çok kaynak:** VirusTotal, MalwareBazaar, ThreatFox, URLhaus, AlienVault OTX,
-  Hybrid Analysis, AbuseIPDB, GreyNoise ve Shodan InternetDB aynı anda sorgulanır, sonuçlar tek
-  bir kararda birleştirilir.
+  Hybrid Analysis, Triage, urlscan.io, AbuseIPDB, GreyNoise, Shodan InternetDB, pasif DNS
+  (mnemonic) ve RDAP/WHOIS aynı anda sorgulanır, sonuçlar tek bir kararda birleştirilir. İstenirse
+  canlı DNS çözümlemesi de yapılır.
+- **Daha az false positive:** [MISP warninglist'leri](https://github.com/MISP/misp-warninglists)
+  ZUHAN'ın içinde gelir. Bilinen zararsız bir listedeki IOC'ler (public DNS sunucuları, popüler
+  siteler, bilinen false-positive hash'ler…) **KNOWN BENIGN** olarak işaretlenir, tek kaynağa
+  dayanan karar temize çekilir ve listenize asla eklenmez. Bulut IP blokları, Tor çıkış
+  düğümleri, tarayıcılar ve paylaşımlı hosting nötr bir **CONTEXT** etiketi alır.
+- **Dikkat edilmesi gerekenler:** son 7 gün içinde ilk kez raporlanan IOC'ler **NEW**, hiçbir
+  kaynağın görmediği IOC'ler **UNKNOWN** olarak işaretlenir (yepyeni ya da hedefli olabilir).
+- **MITRE ATT&CK:** OTX, Hybrid Analysis ve Triage'ın bildirdiği teknikler IOC bazında ve tüm
+  tarama için toplanır, taktiklere göre gruplanır ve
+  [ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/) katmanı olarak dışa
+  aktarılabilir.
 - **Yerel IOC listesi:** zararlı IP, domain, hash ve URL'lerin kalıcı listesi. Her taramada bu
-  listeye de bakılır. Bir dış kaynağın zararlı dediği IOC listeye **otomatik eklenir**. Listeye
+  listeye de bakılır. Bir dış kaynağın zararlı dediği IOC listeye **otomatik eklenir** (istenirse sadece birden fazla kaynak hemfikirse: `-save-min 2`). Listeye
   elle ekleme, içe aktarma, arama, dışa aktarma ve silme de yapılabilir. Listedeki bir domain'in
   alt alan adları da yakalanır.
 - **Dökümden IOC çıkarma:** sandbox trace'i, proxy logu ya da JSON API yanıtı yapıştırılır,
@@ -135,6 +147,12 @@ onu zararlı işaretler, ilk test için uygundur.
 | `abuseipdb` | AbuseIPDB | ipv4, ipv6 | gerekli |
 | `greynoise` (`gn`) | GreyNoise Community | ipv4 | opsiyonel |
 | `shodan` | Shodan InternetDB | ipv4 | gerekmez |
+| `triage` (`tg`) | Triage (tria.ge) sandbox | md5, sha1, sha256 | gerekli |
+| `urlscan` (`us`) | urlscan.io | sha256, ip, domain, url | opsiyonel (daha yüksek limit) |
+| `pdns` | mnemonic Passive DNS | ip, domain, url | opsiyonel (daha yüksek limit) |
+| `rdap` (`whois`) | RDAP / WHOIS (rdap.org) | ip, domain, url | gerekmez |
+| `warninglists` (`wl`) | MISP warninglist'leri (gömülü) | hepsi | gerekmez |
+| `dns` | DNS (canlı, **isteğe bağlı**) | ip, domain, url | gerekmez |
 
 Kaynakların hepsinin ücretsiz katmanı var. Tek bir abuse.ch key'i MalwareBazaar, ThreatFox ve
 URLhaus'un üçü için de geçerli. Key'i olmayan kaynak `SKIPPED` olarak gösterilir, tarama durmaz.
@@ -158,9 +176,19 @@ doldurun. JSON'u terminale yapıştırmayın.
   "otx": "",
   "abusech": "",
   "greynoise": "",
-  "hybrid_analysis": ""
+  "hybrid_analysis": "",
+  "triage": "",
+  "urlscan": "",
+  "mnemonic": ""
 }
 ```
+
+Yeni ortam değişkenleri: `TRIAGE_API_KEY`, `URLSCAN_API_KEY`, `MNEMONIC_API_KEY`.
+
+> **Canlı DNS varsayılan olarak kapalı.** Saldırganın domain'ini kendi DNS sunucunuz üzerinden
+> çözmek, saldırganın name server'ına sorgu düşürüp onu uyarabilir. Bu yüzden `dns` kaynağı
+> sadece `-dns` (CLI) ile ya da web arayüzünde kutusu işaretlenince çalışır. Pasif DNS ve RDAP
+> sadece mnemonic ve rdap.org ile konuşur.
 
 **Ortam değişkenleri** config dosyasındaki değeri ezer: `VT_API_KEY`, `ABUSECH_API_KEY`,
 `ABUSEIPDB_API_KEY`, `OTX_API_KEY`, `HYBRID_API_KEY`, `GREYNOISE_API_KEY`.
@@ -183,9 +211,9 @@ kaldığı sürece çalışır. Kapatmak için o pencerede **Ctrl+C**'ye basın.
 
 | Sekme | Ne yapılır |
 |---|---|
-| **Scan** | Yapıştırılan IOC'leri, bir döküm ya da logu (önce önizleme ile) veya sürüklenen dosyaları (bu bilgisayarda hash'lenir) sorgulama. Kaynak seçme, offline mod, sonuçları filtreleme, bir sonucu tek tıkla listeye ekleme ve **HTML / JSON / CSV / Markdown rapor indirme**. |
+| **Scan** | Yapıştırılan IOC'leri, bir döküm ya da logu (önce önizleme ile) veya sürüklenen dosyaları (bu bilgisayarda hash'lenir) sorgulama. Kaynak seçme, offline mod, otomatik ekleme eşiği ve NEW süresi, sonuçları filtreleme (*New* ve *Unknown* dahil), bir sonucu tek tıkla listeye ekleme, **MITRE ATT&CK** özeti ve **HTML / JSON / CSV / Markdown rapor ya da ATT&CK Navigator katmanı indirme**. |
 | **IOC List** | Etiket, not ve kararla IOC ekleme, dosyadan içe aktarma, tipe, kaynağa ya da metne göre filtreleme, tekli ya da toplu silme, bir kaydı tekrar sorgulama, TXT / CSV / JSON dışa aktarma. |
-| **Sources & API keys** | API key girme, değiştirme ve silme (hemen devreye girer). Hangi kaynakların aktif olduğu ve dosyaların yeri. |
+| **Sources & API keys** | API key girme, değiştirme ve silme (hemen devreye girer). Hangi kaynakların aktif olduğu, dosyaların yeri ve MISP warninglist'lerini güncelleme. |
 
 ![IOC listesi](docs/screenshots/ioc-list.png)
 
@@ -222,7 +250,10 @@ zuhan -hash ornek.exe                           # dosyanın hash'ini hesapla ve 
 cat iocs.txt | zuhan -o json                    # pipe ile gir, JSON al
 zuhan -s vt,mb,tf <hash>                        # sadece bu kaynaklar
 zuhan -x shodan,greynoise <ip>                  # bunlar hariç hepsi
-zuhan -offline <ioc>                            # sadece yerel liste, internete çıkma
+zuhan -offline <ioc>                            # yerel liste + warninglist'ler, internete çıkma
+zuhan -dns evil-domain.com                      # canlı DNS çözümlemesi de yap (isteğe bağlı)
+zuhan -save-min 2 -f iocs.txt                   # sadece 2+ kaynak zararlı derse listeye ekle
+zuhan -f iocs.txt -attack-layer layer.json      # bulunan ATT&CK tekniklerini Navigator katmanı olarak yaz
 ```
 
 `zuhan <ioc>` ile `zuhan scan <ioc>` aynı şeydir.
@@ -345,6 +376,7 @@ Arayüzde sonuçların üstündeki **Download report** butonlarını kullanın.
 | `zuhan db add\|rm\|list\|import\|export\|stats\|path` | yerel IOC listesini yönet |
 | `zuhan web` | tarayıcı arayüzünü başlat |
 | `zuhan sources` | kaynaklar ve key durumu |
+| `zuhan warninglists list\|check\|update\|path` | MISP warninglist'leri (kısaca `wl`) |
 | `zuhan init` | boş config dosyası oluştur |
 | `zuhan version` | sürümü göster |
 
@@ -365,7 +397,11 @@ argümanlardan önce ya da sonra yazılabilir.
 | `-o format` | ekran formatı: `table`, `json`, `md`, `csv`, `html` | `table` |
 | `-s liste` | sadece bu kaynaklar, ör. `local,vt,mb` | hepsi |
 | `-x liste` | bu kaynakları hariç tut | — |
-| `-offline` | sadece yerel liste | kapalı |
+| `-offline` | sadece yerel liste ve warninglist'ler (internet yok) | kapalı |
+| `-dns` | domain/IP'leri canlı da çöz (isteğe bağlı, yukarıya bakın) | kapalı |
+| `-save-min n` | sadece en az `n` kaynak zararlı derse otomatik ekle | `1` |
+| `-new-days n` | son `n` gün içinde ilk raporlanan IOC'leri NEW say (`0` = kapalı) | `7` |
+| `-attack-layer dosya` | bulunan ATT&CK tekniklerini Navigator katmanı olarak yaz | — |
 | `-no-save` | zararlıları yerel listeye ekleme | kapalı |
 | `-save-suspicious` | şüphelileri de ekle | kapalı |
 | `-db dosya` | başka bir IOC listesi kullan | `~/.config/zuhan/iocdb.json` |
@@ -415,11 +451,43 @@ Her kaynağın cevabı ortak bir duruma çevrilir: `MALICIOUS`, `SUSPICIOUS`, `C
 | Local IOC DB | listedeki karar; üst domain eşleşmesi → şüpheli |
 | VirusTotal | 3+ motor → zararlı, 2 → şüpheli, tek motor → "muhtemel yanlış pozitif" notuyla temiz (VT itibarı negatifse şüpheli) |
 | AbuseIPDB | skor ≥ 75 → zararlı, ≥ 25 → şüpheli |
-| MalwareBazaar / ThreatFox / URLhaus | kayıt varsa → zararlı |
+| MalwareBazaar / ThreatFox / URLhaus | kayıt varsa → zararlı; ThreatFox: IOC'nin kendisi değil sadece üzerindeki URL'ler/portlar listedeyse → şüpheli |
 | AlienVault OTX | malware ailesi ya da 5+ pulse → zararlı, 1–4 pulse → şüpheli, gerçek beyaz listeler (whitelist, Alexa, Majestic, bilinen yanlış pozitif …) → temiz |
 | GreyNoise | classification'a göre; RIOT (bilinen güvenilir servis) → temiz |
 | Hybrid Analysis | sandbox kararına göre |
 | Shodan InternetDB | bilgi amaçlı (port/CVE); sadece `c2`/`malware`/`compromised` etiketi varsa şüpheli |
+| Triage | sandbox skoru 8–10 → zararlı, 6–7 → şüpheli, altı → temiz; aile, C2 ve imzalar gösterilir |
+| urlscan.io | urlscan'in zararlı dediği bir tarama varsa → zararlı, yoksa bilgi (tarama sayısı, IP, ASN…) |
+| RDAP / WHOIS | bilgi; 30 günden yeni kayıtlı domain → şüpheli ("newly registered") |
+| Pasif DNS, DNS | bilgi (ilk/son görülme tarihli çözümlemeler; NXDOMAIN ve private cevaplar not edilir) |
+| MISP warninglist'leri | asla zararlı demez; aşağıya bakın |
+
+### Warninglist'ler, NEW, UNKNOWN
+
+ZUHAN, [MISP warninglist'lerinin](https://github.com/MISP/misp-warninglists) bir kopyasını içinde
+taşır (yaklaşık 200 liste; çok büyük "top 1M" ve VPN listeleri hariç). Eşleştirme yerelde yapılır.
+
+- **KNOWN BENIGN** — zararsız bir listede *birebir* eşleşme (public DNS, private bloklar, popüler
+  siteler, bilinen false-positive hash'ler…). *Suspicious* karar ya da tek kaynağın verdiği
+  *malicious* karar temize çekilir (`DOWNGRADED`); iki ya da daha fazla kaynak zararlı diyorsa karar korunur. Bu IOC'ler listeye otomatik eklenmez.
+- **CONTEXT** — bulut/hosting blokları, Tor çıkış düğümleri, tarayıcılar, URL kısaltıcılar ve
+  üst domain ya da URL host'u üzerinden eşleşmeler (ör. `evil.blogspot.com`). Kararı değiştirmez.
+- **NEW** — kaynakların bildirdiği en eski "ilk görülme" `-new-days` gün içindeyse *ve* karar
+  zararlı/şüpheliyse.
+- **UNKNOWN** — cevap veren hiçbir istihbarat kaynağında kaydı yok ve hiçbir liste bağlam
+  vermemiş. Yerel liste ve warninglist'ler burada sayılmaz.
+
+`zuhan warninglists update` güncel listeleri indirir (5 MB üstü listeler atlanır; dahil etmek için
+`-max-size 100` ya da `-all`), `~/.config/zuhan/warninglists.jsonl.gz` dosyasına yazar.
+`zuhan wl check 8.8.8.8` bir IOC'nin hangi listelerde olduğunu gösterir.
+
+### MITRE ATT&CK
+
+OTX pulse'ları, Hybrid Analysis ve Triage imzalarındaki teknik ID'leri gömülü ATT&CK Enterprise
+tablosuyla isimlendirilir ve taktiklere göre gruplanır. `-attack-layer layer.json` (CLI) ya da
+**Download Navigator layer** (web arayüzü) ile dosyayı alıp
+[ATT&CK Navigator](https://mitre-attack.github.io/attack-navigator/)'da açın; her tekniğin skoru
+görüldüğü IOC sayısıdır.
 
 > Yeni yüklenmiş bir örnek henüz VirusTotal'a düşmemiş olabilir. EICAR test dosyası gerçek bir
 > zararlı olmadığı için MalwareBazaar, ThreatFox ve URLhaus'ta `NOT FOUND` döner. Tor çıkış
