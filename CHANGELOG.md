@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.2.0
+
+- **ndjson output:** `-o ndjson` (or `-r file.ndjson` / `.jsonl`) writes one flat JSON object per
+  IOC per line (`ts`, `ioc`, `type`, `verdict`, `flagged`, `queried`, `confidence`, `sources`,
+  `reference`, `first_seen`, `techniques`, ...), for shipping scan results to Logstash/Elasticsearch
+  with Filebeat. Every IOC is written; filter on `verdict` downstream.
+- **Forwarding:** `-forward <url>` (on `scan` and `web`) or `ZUHAN_FORWARD_URL` POSTs every
+  lookup, clean ones included, to an HTTP collector such as a Logstash `http` input, as a JSON
+  array of `{"zuhan": <ndjson record>, "tags": ["zuhan", "zuhan-cli" | "zuhan-web"]}`. A collector
+  error is only a warning (a toast in the web UI); the scan and its exit code are unchanged.
+- ndjson records have a new `ioc_type` field: `hash`, `ip`, `domain` or `url`.
+- `integrations/elastic`: Logstash pipeline (every lookup to `zuhan-lookups-*`, malicious IOCs as
+  ECS `threat.indicator` to `zuhan-ti`), index template, Kibana setup and example detection rules.
+- Dockerfile (multi-stage, static binary) and `.dockerignore`.
+
 ## 3.1.1
 
 - urlscan.io: URL lookups no longer fail when urlscan returns HTTP 502 for a URL search. Other

@@ -121,6 +121,15 @@ func DBPath(flagValue string) string {
 	return DefaultDBPath()
 }
 
+// ForwardURL resolves where scan results are forwarded:
+// explicit flag > ZUHAN_FORWARD_URL > "" (forwarding off).
+func ForwardURL(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return os.Getenv("ZUHAN_FORWARD_URL")
+}
+
 // KeyField describes one API key slot in the config file.
 type KeyField struct {
 	ID    string `json:"id"`    // JSON field name in the config file

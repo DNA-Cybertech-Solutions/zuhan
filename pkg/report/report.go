@@ -25,13 +25,15 @@ type Options struct {
 }
 
 // Formats lists the supported output formats.
-var Formats = []string{"table", "json", "md", "csv", "html"}
+var Formats = []string{"table", "json", "ndjson", "md", "csv", "html"}
 
 // FormatFromPath infers the report format from a file extension.
 func FormatFromPath(path string) (string, error) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":
 		return "json", nil
+	case ".ndjson", ".jsonl":
+		return "ndjson", nil
 	case ".md", ".markdown":
 		return "md", nil
 	case ".csv":
@@ -41,7 +43,7 @@ func FormatFromPath(path string) (string, error) {
 	case ".txt", ".log":
 		return "table", nil
 	}
-	return "", fmt.Errorf("unknown report extension %q (use .html .json .md .csv .txt)", filepath.Ext(path))
+	return "", fmt.Errorf("unknown report extension %q (use .html .json .ndjson .md .csv .txt)", filepath.Ext(path))
 }
 
 // Write renders reps in the given format.
@@ -54,6 +56,8 @@ func Write(w io.Writer, format string, reps []engine.Report, opt Options) error 
 		return writeTable(w, reps, opt)
 	case "json":
 		return writeJSON(w, reps, opt)
+	case "ndjson", "jsonl":
+		return writeNDJSON(w, reps, opt)
 	case "md", "markdown":
 		return writeMarkdown(w, reps, opt)
 	case "csv":

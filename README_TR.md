@@ -352,6 +352,7 @@ Komuta `-r <dosya>` ekleyin. Format dosya uzantısından seçilir:
 |---|---|
 | `.html` | tarayıcıda açılan, renkli, paylaşılabilir rapor |
 | `.json` | SIEM / SOAR / başka araçlar |
+| `.ndjson` / `.jsonl` | log taşıyıcılar (Filebeat, Logstash): her IOC için tek satırlık düz JSON |
 | `.md` | ticket, wiki |
 | `.csv` | Excel / LibreOffice |
 | `.txt` | terminal tablosunun aynısı |
@@ -360,9 +361,34 @@ Komuta `-r <dosya>` ekleyin. Format dosya uzantısından seçilir:
 zuhan -f iocs.txt -r rapor.html
 zuhan scan -dump dump.log -r rapor.json -q      # ekrana basmadan sadece rapor yaz
 zuhan <hash> -o json                            # rapor yerine ekrana JSON
+zuhan -f iocs.txt -o ndjson >> sonuclar.ndjson  # her IOC için bir JSON satırı
 ```
 
 Arayüzde sonuçların üstündeki **Download report** butonlarını kullanın.
+
+### Sonuçları Logstash / Elasticsearch'e göndermek
+
+*Demo: terminalden ve web arayüzünden yapılan ZUHAN sorguları Elasticsearch/Kibana'ya düşüyor.*
+
+https://github.com/user-attachments/assets/8e19f492-a177-4595-9362-37b418290bbd
+
+Bir toplayıcı adresi verirseniz her sorgu (terminal ve web arayüzü) oraya da POST edilir, temiz
+sonuçlar dahil. Genelde hedef bir Logstash `http` girişidir:
+
+```bash
+export ZUHAN_FORWARD_URL=http://192.168.56.10:8080   # ya da: zuhan -forward http://... <ioc>
+zuhan 44d88612fea8a8f36de82e1278abb02f
+zuhan web                                            # arayüz sorguları da gönderilir
+```
+
+Gövde bir JSON dizisidir, her IOC için bir eleman: `{"zuhan": <ndjson kaydı>, "tags": ["zuhan",
+"zuhan-cli"]}` (arayüzden gelince `zuhan-web`). Kayıtlarda ayrıntılı `type` alanının yanında
+`ioc_type` (`hash`, `ip`, `domain`, `url`) da var; `zuhan.ioc_type:hash and zuhan.verdict:malicious`
+gibi kurallar bununla yazılır. Toplayıcıya ulaşılamazsa ZUHAN uyarı verir (arayüzde bildirim
+çıkar), tarama sonucu ve çıkış kodu etkilenmez.
+
+Hazır Logstash hattı, indeks şablonu ve Kibana kurulumu
+[`integrations/elastic`](integrations/elastic/README.md) klasöründe.
 
 ---
 
@@ -394,7 +420,8 @@ argümanlardan önce ya da sonra yazılabilir.
 | `-keep-private` | dökümdeki özel IP'leri de al | kapalı |
 | `-hash` | dosya olan argümanların hash'ini hesaplayıp sorgula | kapalı |
 | `-r dosya` | rapor yaz (format uzantıdan) | — |
-| `-o format` | ekran formatı: `table`, `json`, `md`, `csv`, `html` | `table` |
+| `-o format` | ekran formatı: `table`, `json`, `ndjson`, `md`, `csv`, `html` | `table` |
+| `-forward url` | her sonucu bu toplayıcıya da POST et (ör. Logstash http girişi) | `$ZUHAN_FORWARD_URL` |
 | `-s liste` | sadece bu kaynaklar, ör. `local,vt,mb` | hepsi |
 | `-x liste` | bu kaynakları hariç tut | — |
 | `-offline` | sadece yerel liste ve warninglist'ler (internet yok) | kapalı |

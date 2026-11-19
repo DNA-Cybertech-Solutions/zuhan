@@ -12,6 +12,7 @@ import (
 
 	"github.com/DNA-Cybertech-Solutions/zuhan"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/config"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/forward"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/store"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/web"
@@ -26,8 +27,15 @@ func (c *cli) web(argv []string) int {
 	noOpen := fs.Bool("no-open", false, "don't open the browser automatically")
 	dbPath := fs.String("db", "", "local IOC list file (default: "+config.DefaultDBPath()+")")
 	cfgPath := fs.String("c", "", "config file (default: "+config.DefaultPath()+")")
+	fwdURL := fs.String("forward", "", "also send every scan result to this HTTP collector, e.g. a Logstash http input (default: $"+forward.EnvVar+")")
 	if _, code, ok := parseArgs(fs, argv); !ok {
 		return code
+	}
+	fwd := config.ForwardURL(*fwdURL)
+	if fwd != "" {
+		if err := forward.Validate(fwd); err != nil {
+			return c.errf("%v", err)
+		}
 	}
 
 	host, _, err := net.SplitHostPort(*addr)
@@ -67,6 +75,7 @@ func (c *cli) web(argv []string) int {
 	srv.DBPath, srv.Version = db, version
 	srv.ConfigFile = config.Resolve(*cfgPath)
 	srv.WarninglistPath = config.WarninglistPath()
+	srv.ForwardURL = fwd
 	srv.Rebuild = func(k sources.Keys) *zuhan.Scanner { return zuhan.New(k, st) }
 	srv.ConfigPath = usedCfg
 	if srv.ConfigPath == "" {
@@ -76,6 +85,9 @@ func (c *cli) web(argv []string) int {
 	url := "http://" + ln.Addr().String() + "/"
 	fmt.Fprintf(c.stdout, "ZUHAN web UI is running at %s\n", url)
 	fmt.Fprintln(c.stdout, "Reachable from this computer only. Press Ctrl+C in this window to stop it.")
+	if fwd != "" {
+		fmt.Fprintf(c.stdout, "Every scan result is also sent to %s\n", fwd)
+	}
 	if !*noOpen {
 		openBrowser(url)
 	}

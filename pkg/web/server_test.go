@@ -378,3 +378,41 @@ func TestAttackLayerAndOptIn(t *testing.T) {
 		t.Fatalf("update without path: %d", w.Code)
 	}
 }
+
+func TestScanForwards(t *testing.T) {
+	var got []map[string]any
+	coll := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		json.Unmarshal(b, &got)
+	}))
+	defer coll.Close()
+
+	e := setup(t)
+	e.srv.ForwardURL = coll.URL
+	w := e.do("POST", "/api/scan", map[string]any{"values": "evil.com 8.8.8.8"})
+	ev := readStream(t, w.Body.String())
+	if res := ev[len(ev)-1]; res["forward_error"] != nil {
+		t.Fatalf("forward_error: %v", res["forward_error"])
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 forwarded records, got %d", len(got))
+	}
+	types := map[string]string{}
+	for _, r := range got {
+		z := r["zuhan"].(map[string]any)
+		types[z["ioc"].(string)] = z["ioc_type"].(string)
+		if tags := r["tags"].([]any); tags[len(tags)-1] != "zuhan-web" {
+			t.Errorf("tags = %v", tags)
+		}
+	}
+	if types["evil.com"] != "domain" || types["8.8.8.8"] != "ip" {
+		t.Errorf("ioc_type = %v", types)
+	}
+
+	// collector down: results still come back, with forward_error set
+	e.srv.ForwardURL = "http://127.0.0.1:1/"
+	ev = readStream(t, e.do("POST", "/api/scan", map[string]any{"values": "evil.com"}).Body.String())
+	if res := ev[len(ev)-1]; res["type"] != "result" || res["forward_error"] == nil {
+		t.Fatalf("want results plus forward_error, got %v", res)
+	}
+}

@@ -1,0 +1,56 @@
+{
+  "index_patterns": ["zuhan-lookups-*", "zuhan-ti"],
+  "priority": 200,
+  "_meta": { "description": "ZUHAN lookups and threat intel (integrations/elastic)" },
+  "template": {
+    "settings": { "number_of_shards": 1 },
+    "mappings": {
+      "dynamic_templates": [
+        {
+          "strings_as_keyword": {
+            "match_mapping_type": "string",
+            "mapping": { "type": "keyword", "ignore_above": 1024 }
+          }
+        }
+      ],
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "message": { "type": "text" },
+        "event": {
+          "properties": {
+            "original": { "type": "keyword", "index": false, "doc_values": false }
+          }
+        },
+        "zuhan": {
+          "properties": {
+            "ts": { "type": "date" },
+            "first_seen": { "type": "date" },
+            "flagged": { "type": "integer" },
+            "queried": { "type": "integer" },
+            "confidence": { "type": "integer" },
+            "new": { "type": "boolean" },
+            "unknown": { "type": "boolean" },
+            "reference": { "type": "keyword", "ignore_above": 4096 }
+          }
+        },
+        "threat": {
+          "properties": {
+            "indicator": {
+              "properties": {
+                "ip": { "type": "ip" },
+                "first_seen": { "type": "date" },
+                "last_seen": { "type": "date" },
+                "reference": { "type": "keyword", "ignore_above": 4096 },
+                "url": {
+                  "properties": {
+                    "full": { "type": "keyword", "ignore_above": 4096 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
