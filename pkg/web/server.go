@@ -34,6 +34,7 @@ import (
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/attack"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/extract"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/forward"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/ioc"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/report"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
@@ -63,6 +64,8 @@ type Server struct {
 	// WarninglistPath is where "Update warninglists" stores the download
 	// ("" disables the update button).
 	WarninglistPath string
+	// ForwardURL, when set, receives every scan result (see package forward).
+	ForwardURL string
 
 	mu    sync.RWMutex // guards Base
 	token string
@@ -412,6 +415,12 @@ func (s *Server) scan(w http.ResponseWriter, r *http.Request) {
 		"notes": notes, "attack": attack.ByTactic(hits), "attack_count": len(hits)}
 	if err != nil {
 		out["save_error"] = err.Error()
+	}
+	if s.ForwardURL != "" {
+		recs := report.NDJSONRecords(reps, report.Options{Version: s.Version, Generated: now})
+		if ferr := forward.Send(context.Background(), nil, s.ForwardURL, recs, "web"); ferr != nil {
+			out["forward_error"] = ferr.Error()
+		}
 	}
 	send(out)
 }

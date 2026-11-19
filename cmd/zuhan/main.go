@@ -17,7 +17,7 @@ import (
 
 // version is overridden at build time with
 // -ldflags "-X main.version=v3.0.0" (see Makefile).
-var version = "3.1.1"
+var version = "3.2.0"
 
 // Exit codes: 0 = nothing malicious, 1 = usage/runtime error,
 // 2 = at least one IOC malicious, 3 = at least one suspicious (none malicious).

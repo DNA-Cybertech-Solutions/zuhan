@@ -675,6 +675,7 @@ function onEvent(ev) {
     lastAttack = { groups: ev.attack || [], count: ev.attack_count || 0 };
     renderResults(ev.summary);
     if (ev.save_error) toast("Could not update the local list: " + ev.save_error, "err");
+    if (ev.forward_error) toast("Results were not forwarded: " + ev.forward_error, "err");
     const added = lastReports.filter(r => r.local_db === "added").length;
     if (added) toast(`${added} malicious IOC(s) added to the local list`, "ok");
     const fresh = lastReports.filter(r => r.new).length;

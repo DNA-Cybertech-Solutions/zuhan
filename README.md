@@ -348,6 +348,7 @@ Add `-r <file>`; the format comes from the extension:
 |---|---|
 | `.html` | shareable, colour-coded report for the browser |
 | `.json` | SIEM / SOAR / other tools |
+| `.ndjson` / `.jsonl` | log shippers (Filebeat, Logstash): one flat JSON object per IOC, one per line |
 | `.md` | tickets, wikis |
 | `.csv` | spreadsheets |
 | `.txt` | same as the terminal table |
@@ -356,9 +357,34 @@ Add `-r <file>`; the format comes from the extension:
 zuhan -f iocs.txt -r report.html
 zuhan scan -dump dump.log -r report.json -q     # write the report, print nothing
 zuhan <hash> -o json                            # JSON to stdout instead
+zuhan -f iocs.txt -o ndjson >> results.ndjson   # one JSON line per IOC, ready to ship
 ```
 
 In the web UI, use the **Download report** buttons above the results.
+
+### Forwarding results to Logstash / Elasticsearch
+
+*Demo: lookups from the ZUHAN terminal and web UI arriving in Elasticsearch/Kibana.*
+
+https://github.com/user-attachments/assets/8e19f492-a177-4595-9362-37b418290bbd
+
+Set a collector URL and every lookup (terminal and web UI) is also POSTed there, clean results
+included. A Logstash `http` input is the usual target:
+
+```bash
+export ZUHAN_FORWARD_URL=http://192.168.56.10:8080   # or: zuhan -forward http://... <ioc>
+zuhan 44d88612fea8a8f36de82e1278abb02f
+zuhan web                                            # web UI scans are forwarded too
+```
+
+The body is a JSON array, one element per IOC: `{"zuhan": <ndjson record>, "tags": ["zuhan",
+"zuhan-cli"]}` (`zuhan-web` from the web UI). Records carry `ioc_type` (`hash`, `ip`, `domain`,
+`url`) next to the detailed `type`, for rules like `zuhan.ioc_type:hash and
+zuhan.verdict:malicious`. If the collector is down, ZUHAN prints a warning (the web UI shows it)
+and the scan result is not affected.
+
+A ready Logstash pipeline, index template and Kibana setup are in
+[`integrations/elastic`](integrations/elastic/README.md).
 
 ---
 
@@ -390,7 +416,8 @@ Flags may come before or after arguments.
 | `-keep-private` | keep private IPs from dumps | off |
 | `-hash` | hash file arguments and look up the hashes | off |
 | `-r file` | write a report (format from extension) | — |
-| `-o format` | stdout format: `table`, `json`, `md`, `csv`, `html` | `table` |
+| `-o format` | stdout format: `table`, `json`, `ndjson`, `md`, `csv`, `html` | `table` |
+| `-forward url` | also POST every result to this collector (e.g. Logstash http input) | `$ZUHAN_FORWARD_URL` |
 | `-s list` | only these sources, e.g. `local,vt,mb` | all |
 | `-x list` | exclude these sources | — |
 | `-offline` | local list and warninglists only (no internet) | off |

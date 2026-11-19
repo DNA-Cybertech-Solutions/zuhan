@@ -20,6 +20,7 @@ import (
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/config"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/engine"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/extract"
+	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/forward"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/ioc"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/report"
 	"github.com/DNA-Cybertech-Solutions/zuhan/pkg/sources"
@@ -52,8 +53,8 @@ func (c *cli) scan(argv []string) int {
 		dump     = fs.String("dump", "", "API-call dump / log / JSON response: extract the IOCs in it and look them up ('-' = stdin)")
 		maxDump  = fs.Int("max", 100, "look up at most this many IOCs from a dump (0 = unlimited)")
 		keepPriv = fs.Bool("keep-private", false, "keep private/local IPs from dumps (192.168.x, 10.x, 127.x …)")
-		outFmt   = fs.String("o", "table", "stdout format: table|json|md|csv|html")
-		repPath  = fs.String("r", "", "write a report file (format from extension: .html .json .md .csv .txt)")
+		outFmt   = fs.String("o", "table", "stdout format: table|json|ndjson|md|csv|html")
+		repPath  = fs.String("r", "", "write a report file (format from extension: .html .json .ndjson .md .csv .txt)")
 		srcList  = fs.String("s", "", "only these sources (comma separated): local,wl,vt,mb,tf,uh,otx,ha,abuseipdb,gn,shodan,triage,urlscan,pdns,rdap,dns")
 		exclude  = fs.String("x", "", "exclude these sources (comma separated)")
 		offline  = fs.Bool("offline", false, "check only local data: the IOC list and warninglists (no internet)")
@@ -66,6 +67,7 @@ func (c *cli) scan(argv []string) int {
 		dbPath   = fs.String("db", "", "local IOC list file (default: "+config.DefaultDBPath()+")")
 		timeout  = fs.Duration("t", 25*time.Second, "timeout per source")
 		cfgPath  = fs.String("c", "", "config file (default: "+config.DefaultPath()+")")
+		fwdURL   = fs.String("forward", "", "also send every result to this HTTP collector, e.g. a Logstash http input (default: $"+forward.EnvVar+")")
 		verbose  = fs.Bool("v", false, "show every field and link")
 		hashMode = fs.Bool("hash", false, "hash file arguments (MD5/SHA1/SHA256) and look up the hashes")
 		listSrc  = fs.Bool("list", false, "list sources and API key status")
@@ -123,6 +125,12 @@ func (c *cli) scan(argv []string) int {
 	repFmt := ""
 	if *repPath != "" {
 		if repFmt, err = report.FormatFromPath(*repPath); err != nil {
+			return c.errf("%v", err)
+		}
+	}
+	fwd := config.ForwardURL(*fwdURL)
+	if fwd != "" {
+		if err := forward.Validate(fwd); err != nil {
 			return c.errf("%v", err)
 		}
 	}
@@ -234,6 +242,12 @@ func (c *cli) scan(argv []string) int {
 		Generated: time.Now(),
 		Color:     *outFmt == "table" && !*noColor && os.Getenv("NO_COLOR") == "" && isTerminal(c.stdout),
 	}
+	if fwd != "" && ctx.Err() == nil {
+		// A collector that is down must not hide the results: warn and go on.
+		if err := forward.Send(context.Background(), nil, fwd, report.NDJSONRecords(reps, ropt), "cli"); err != nil {
+			c.warnf("%v", err)
+		}
+	}
 	if !*quiet {
 		if err := report.Write(c.stdout, *outFmt, reps, ropt); err != nil {
 			return c.errf("%v", err)
@@ -309,7 +323,7 @@ func validFormat(f string) bool {
 			return true
 		}
 	}
-	return f == "markdown"
+	return f == "markdown" || f == "jsonl"
 }
 
 func parseIDs(list string) (map[string]bool, error) {
